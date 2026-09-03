@@ -27,6 +27,10 @@ services:
         sync: false
       - key: APP_ACCESS_SECRET      # optional; defaults to a value derived from the password
         sync: false
+      # Server-to-server secret the CRM backend presents as X-AR-Service-Key.
+      # MUST equal ACCOUNT_RESEARCH_SERVICE_KEY on the CRM service.
+      - key: APP_SERVICE_KEY
+        sync: false
 
       # ── Embedding ────────────────────────────────────────────────────────
       # The CRM origin allowed to frame this app. Scheme + host, no path.
@@ -73,3 +77,17 @@ services:
         sync: false
       - key: APOLLO_ENRICH_LIMIT
         value: "12"
+
+      # ── Optional ────────────────────────────────────────────────────────
+      - key: DASHSCOPE_REGION       # informational; routing uses DASHSCOPE_BASE_URL
+        sync: false
+      - key: TOKEN_PLAN_API_KEY     # not used by the native protocol; leave unset
+        sync: false
+      - key: TOKEN_PLAN_BASE_URL
+        sync: false
+      - key: AI_PRICE_INPUT_PER_1K  # cost reporting; omitted = "pricing not configured"
+        sync: false
+      - key: AI_PRICE_OUTPUT_PER_1K
+        sync: false
+      - key: AI_PRICE_CURRENCY
+        sync: false
