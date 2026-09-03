@@ -1,0 +1,12 @@
+.venv/
+test_results/
+evidence_cache/
+ai_credentials.env
+__pycache__/
+reports/
+.env
+*.env
+!ai_credentials.env.example
+.DS_Store
+*.pyc
+.pytest_cache/

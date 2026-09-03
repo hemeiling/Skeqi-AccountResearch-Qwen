@@ -1,0 +1,4 @@
+Flask>=3.0
+reportlab>=4.0
+openpyxl>=3.1
+gunicorn>=23.0        # production WSGI server on Render; run with ONE worker

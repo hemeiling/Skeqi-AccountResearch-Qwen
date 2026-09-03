@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account Research</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brandmark">AR</div>
+  <div class="brandtext">
+    <h1>Account Research <span class="cn">客户研究</span></h1>
+    <p class="tagline">AI-powered company intelligence for SKEQI account planning
+      <span class="cn">思客琦客户洞察与销售研究</span></p>
+  </div>
+  <div class="appbar-right">
+    <button id="sysstatus" class="mini ghost">System Status <span class="cn">系统状态</span></button>
+    <div id="statuspop" class="statuspop" hidden></div>
+  </div>
+</header>
+
+<nav class="tabbar">
+  <button class="mode active" data-mode="single">Single Company <span class="cn">单个公司</span></button>
+  <button class="mode" data-mode="batch">Batch Research <span class="cn">批量研究</span></button>
+  <button class="mode" data-mode="reports">Reports <span class="cn">报告库</span></button>
+</nav>
+
+<main>
+  <!-- ===================================================== Single Company -->
+  <section id="mode-single">
+    <section class="panel">
+      <div class="cardhd"><h2>Research a Company <span class="cn">研究单个公司</span></h2></div>
+      <div class="form">
+        <div class="field">
+          <label for="company">Company Name / 公司名称</label>
+          <input id="company" type="text" value="SKEQI" placeholder="SKEQI" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="website">Company Website / 公司官网 <span class="opt">optional / 可选</span></label>
+          <input id="website" type="url" value="https://www.skeqi.com" placeholder="https://www.skeqi.com" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="model">Model / 模型</label>
+          <select id="model"></select>
+        </div>
+        <div class="field">
+          <label>Report Language / 报告语言</label>
+          <div class="langbtns" data-langgroup>
+            <button class="langbtn" data-lang="en">English</button>
+            <button class="langbtn" data-lang="zh">中文</button>
+            <button class="langbtn" data-lang="bilingual">Bilingual</button>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="run" class="primary">Generate Research <span class="cn">生成研究报告</span></button>
+        </div>
+        <div id="cachebar" class="cachebar" hidden>
+          <span id="cachetext"></span>
+          <button id="usecache" class="mini brand">Use cached research</button>
+          <button id="refresh" class="mini ghost">Refresh web research</button>
+        </div>
+        <div id="progress" class="progress" hidden>
+          <ul id="stages" class="stages"></ul>
+          <ul id="modelstatus" class="modelstatus"></ul>
+        </div>
+        <p id="error" class="error" hidden></p>
+      </div>
+    </section>
+
+    <div class="layout" style="margin-top:16px">
+      <section class="panel results" id="results" hidden>
+        <div class="langbar">
+          <span class="langlabel">Display Language / 显示语言</span>
+          <div class="langbtns" data-langgroup>
+            <button class="langbtn" data-lang="en">English</button>
+            <button class="langbtn" data-lang="zh">中文</button>
+            <button class="langbtn" data-lang="bilingual">Bilingual / 双语</button>
+          </div>
+        </div>
+        <div class="tabs" id="tabs"></div>
+        <div id="report" class="report"></div>
+        <div id="meta" class="meta"></div>
+      </section>
+
+      <aside class="panel side">
+        <h2>Sources Used <span class="cn">已用信息来源</span></h2>
+        <ol id="sources" class="sources"><li class="empty">No research run yet. <span class="cn">尚未运行研究。</span></li></ol>
+
+        <h2>Search Queries <span class="cn">搜索查询</span></h2>
+        <ol id="queries" class="queries"><li class="empty">—</li></ol>
+
+        <h2>Recent Research <span class="cn">最近研究</span></h2>
+        <ul id="history" class="history"><li class="empty">Nothing saved yet. <span class="cn">暂无保存记录。</span></li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ====================================================== Batch Research -->
+  <section id="mode-batch" hidden>
+    <section class="panel">
+      <div class="cardhd"><h2>Batch Research <span class="cn">批量研究</span></h2>
+        <span class="hint">Companies are processed one at a time; reports save as each finishes.
+          <span class="cn">逐家处理，每家完成后立即保存报告。</span></span>
+      </div>
+      <div class="form">
+        <div class="field">
+          <label for="batchfile">Company List / 公司列表 <span class="opt">.xlsx / .csv</span></label>
+          <input id="batchfile" type="file" accept=".csv,.xlsx,.xlsm">
+        </div>
+        <div class="field">
+          <label for="batchmodel">Model / 模型</label>
+          <select id="batchmodel"></select>
+        </div>
+        <div class="field">
+          <label for="colname">Company Column / 公司名称列</label>
+          <select id="colname"></select>
+        </div>
+        <div class="field">
+          <label for="colsite">Website Column / 官网列</label>
+          <select id="colsite"></select>
+        </div>
+        <div class="field">
+          <label>Report Language / 报告语言</label>
+          <div class="langbtns" data-langgroup>
+            <button class="langbtn" data-lang="en">English</button>
+            <button class="langbtn" data-lang="zh">中文</button>
+            <button class="langbtn" data-lang="bilingual">Bilingual</button>
+          </div>
+        </div>
+        <div class="field" style="justify-content:end">
+          <label class="chk"><input type="checkbox" id="useexisting" checked>
+            Skip companies that already have a report
+            <span class="cn">跳过已有报告的公司</span></label>
+        </div>
+      </div>
+
+      <div class="actionbar" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2)">
+        <button id="runselected" class="primary">Generate Selected <span class="cn">生成选中公司</span></button>
+        <button id="runall" class="mini">Generate All / 生成全部</button>
+        <button id="retryfailed" class="mini">Retry Failed / 重试失败项</button>
+        <button id="stopbatch" class="mini del" hidden>Stop Batch / 停止批量</button>
+        <span class="sep"></span>
+        <button id="selectall" class="linkbtn">Select All / 全选</button>
+        <button id="selectnone" class="linkbtn">Clear Selection / 清除选择</button>
+        <span class="spacer"></span>
+        <button id="deletesel" class="mini del">Delete Selected Reports / 删除选中报告</button>
+      </div>
+      <div id="bulkconfirm" class="bulkconfirm" hidden></div>
+      <p id="batcherror" class="error" hidden style="margin-top:12px"></p>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <div id="batchsummary" class="batchsummary" hidden></div>
+      <div class="tablewrap">
+        <table class="batchtable" id="batchtable">
+          <thead><tr>
+            <th style="width:34px"></th><th>Company / 公司</th><th>Website / 官网</th>
+            <th>Status / 状态</th><th>Model / 模型</th>
+            <th class="num">Sources / 来源</th><th class="num">Tokens / Token数</th>
+            <th class="num">Time / 时间</th><th style="width:170px">Actions / 操作</th>
+          </tr></thead>
+          <tbody><tr><td colspan="9" class="empty">Upload a company list to begin.
+            <span class="cn">上传公司列表后开始批量研究。</span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- ============================================================= Reports -->
+  <section id="mode-reports" hidden>
+    <div class="layout">
+      <section class="panel">
+        <div class="cardhd"><h2>Report Library <span class="cn">报告库</span></h2>
+          <span class="hint" id="libcount"></span>
+        </div>
+        <input id="libsearch" class="libsearch" type="search" placeholder="Search reports / 搜索报告…" autocomplete="off">
+        <ul id="donelist" class="liblist"><li class="empty">None yet. <span class="cn">暂无报告。</span></li></ul>
+      </section>
+
+      <aside class="panel side">
+        <h2>Portfolio Actions <span class="cn">汇总操作</span></h2>
+        <div class="compilebox">
+          <div class="field">
+            <label for="order">Order / 排序</label>
+            <select id="order">
+              <option value="upload">Upload order / 上传顺序</option>
+              <option value="name">Company name / 公司名称</option>
+              <option value="completed">Completion time / 完成时间</option>
+            </select>
+          </div>
+          <button id="compileall" class="primary">Compile Completed Reports <span class="cn">汇总已完成报告</span></button>
+          <div class="row">
+            <button id="compilesel" class="mini">Compile Selected / 汇总选中报告</button>
+            <button id="zipbtn" class="mini">Download ZIP / 下载ZIP</button>
+          </div>
+          <p id="compileout" class="compileout" hidden></p>
+        </div>
+        <h2>Export Language <span class="cn">导出语言</span></h2>
+        <div class="langbtns" data-langgroup>
+          <button class="langbtn" data-lang="en">English</button>
+          <button class="langbtn" data-lang="zh">中文</button>
+          <button class="langbtn" data-lang="bilingual">Bilingual</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<!-- Embedded PDF viewer. A page-level panel, not a modal: batch research keeps
+     running and every control stays reachable while a report is open. -->
+<section id="pdfpanel" class="pdfpanel" hidden>
+  <div class="pdfshell">
+    <div class="pdfbar">
+      <span class="who">
+        <span class="lab">Report Preview / 报告预览</span>
+        <span id="pdftitle" class="pdftitle"></span>
+      </span>
+      <div class="langbtns" data-langgroup>
+        <button class="langbtn" data-lang="en">English</button>
+        <button class="langbtn" data-lang="zh">中文</button>
+        <button class="langbtn" data-lang="bilingual">Bilingual</button>
+      </div>
+      <span class="pdfbtns">
+        <a id="pdfnewtab" class="mini ghost" href="#" target="_blank" rel="noopener">Open Full Screen / 全屏</a>
+        <a id="pdfdownload" class="mini ghost" href="#">Download / 下载</a>
+        <button id="pdfclose" class="mini">Close / 关闭</button>
+      </span>
+    </div>
+    <iframe id="pdfframe" class="pdfframe" title="Report PDF"></iframe>
+  </div>
+  <p id="pdffallback" class="pdffallback" hidden>
+    This browser will not display the PDF inline.
+    <a id="pdffallbacklink" href="#" target="_blank" rel="noopener">Open it in a new tab</a>.
+    <span class="cn">当前浏览器无法内嵌显示PDF，请在新标签页中打开。</span>
+  </p>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

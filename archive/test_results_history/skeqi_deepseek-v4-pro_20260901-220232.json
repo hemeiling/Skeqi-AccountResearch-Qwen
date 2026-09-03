@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-09-01T22:02:32.389796-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "deepseek-v4-pro",
+  "model_label": "DeepSeek V4 Pro",
+  "protocol": "DashScope Native",
+  "endpoint": "text-generation",
+  "search_enabled": true,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "「思客琦自动化工程招聘」_2026年思客琦自动化工程招聘信息- 智通直聘",
+      "url": "https://www.job5156.com/gongsi/gse79f14b450c4fec22e22caff419280c0/",
+      "domain": "www.job5156.com",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview\nSKEQI (思客琦) is a high-tech enterprise specialized in the R&D, production, and sales of intelligent equipment. It provides intelligent manufacturing solutions centered on intelligent equipment. The company is deeply rooted in the new energy intelligent equipment field, with products covering battery manufacturing processes such as cell assembly, module formation, PACK packaging, and battery recycling and disassembly. [1] **Verified**\n\nThe company was founded in 2012. [3][5] **Verified** (third-party job-board sources, consistent with official website’s implied maturity)\n\nIts headquarters or key locations include an address in Ningde, Fujian (宁德市蕉城区疏港路115号) [1] and a registered address in Shanghai (上海市松江区小昆山镇光华路650号8幢) according to business registration information. [6] The official website only lists the Ningde address. [1] The company operates major manufacturing bases in Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai. [3][5] **Verified** (third-party, but consistent with multi-base mention)\n\n## Main Products & Services\nThe company’s main products and services include:\n\n- **New Energy Intelligent Equipment**: core products covering cell assembly, module formation, PACK packaging, and battery recycling and disassembly. SKEQI positions itself as a leading provider of module/PACK whole-line solutions. [1] **Verified**\n- **Qihang Digital Factory System (琦航数字工厂系统)**: a proprietary 5G digital factory system integrating PACK line stations, line-side warehouses, welding lines, WMS, MES, supply chain management, and big data visualization dashboards for full-process digital control. [1] **Verified**\n- **Kepaille Intelligent Logistics (科派乐智能物流)**: an intelligent logistics brand incubated from years of experience, providing intelligent conveying, handling, warehousing, and non-standard automation systems. [1] **Verified**\n- **Laser Application Technology**: one-stop laser application solutions for new energy, automotive, and industrial engineering, focusing on laser welding, energy control, and beam shaping technologies. [1] **Verified**\n- **Industrial Non-Destructive Testing**: high-end (2D/3D) X-ray intelligent inspection equipment and solutions for new energy batteries, electronic semiconductor welding defects, automotive parts, aerospace, etc. [1] **Verified**\n- **Precision Intelligent Manufacturing**: precision machining, product processing, mold manufacturing, including industrial equipment components, molds, precision plastics, hardware parts, battery components, and electrical components. [1] **Verified**\n- **Automobiles and Components**: flexible, automated, intelligent production lines for automotive parts and OEMs, covering body parts, chassis parts, and complete vehicle body-in-white welding equipment lines. [1] **Verified**\n\nAdditionally, a patent was granted for a “positioning slide table for pre-stacking adhesive cells” to improve stacking accuracy, indicating ongoing innovation in cell stacking equipment. [2] **Verified** (third-party industry publication)\n\n## Industries / Markets Served\nThe company primarily serves the **new energy** sector, specifically lithium battery manufacturing. [1] It also extends to **automotive and components**, **3C electronics** (mentioned for intelligent logistics), **aerospace** (for non-destructive testing), and **photovoltaic/energy storage** (via customers like Jinko Energy and Haichen). [1][3][5] The business has expanded to overseas markets including Europe, Southeast Asia, and North America. [3][5] **Verified** (official website for primary industries; third-party job-board for photovoltaic/energy storage and overseas expansion)\n\n## Customer Segments\nThe customer segments include:\n- Head lithium battery manufacturers (e.g., CATL, EVE Energy, CALB, REPT Energy) [1][3][5]\n- New energy vehicle brands (e.g., XPeng, Leapmotor, and internationally Audi, BMW, Ford, Geely, SAIC) [1][3][5]\n- Special vehicle and industrial vehicle enterprises (e.g., Linde, Hangcha) for electrification transition [1]\n- Photovoltaic/energy storage head enterprises (e.g., Jinko Energy, Haichen) [3][5]\n\n## Key Customers / Partners\nKey customers mentioned by name in the evidence:\n\n- **CATL (宁德时代)** – first-party mention on official website [1]; also in third-party sources [3][5]. SKEQI received CATL’s “Best Equipment Quality Response Award” [1]. **Verified**\n- **EVE Energy (亿纬锂能)** – first-party mention [1]; third-party [3][5]. **Verified**\n- **CALB (中创新航)** – first-party mention [1]; third-party [3][5]. **Verified**\n- **Guoxuan High-tech (国轩高科)** – first-party mention [1]. **Verified**\n- **XPeng (小鹏)** – first-party mention [1]; third-party [3][5]. **Verified**\n- **Leapmotor (零跑)** – first-party mention [1]; third-party [3][5]. **Verified**\n- **Lind (林德)** and **Hangcha (杭叉)** – first-party mention [1]. **Verified**\n- **REPT Energy (瑞浦能源)** – third-party mention [3][5]. **Likely / partially supported** (not on official website but in job-board descriptions)\n- **Audi, BMW, Ford, Geely, SAIC** – third-party mention [3][5]. **Likely / partially supported**\n- **Jinko Energy (晶科能源), Haichen (海辰)** – third-party mention [3][5]. **Likely / partially supported**\n\nNo first-party partner/customer case studies or testimonials are provided beyond the award from CATL. All customer names on the official website are listed as “served” customers. [1]\n\n## Competitive / Strategic Positioning\nThe company claims to be an “industry-leading module/PACK whole-line integrator” and “industry-leading module/PACK whole-line provider.” [1] It states that its module and PACK production line held the **No. 1 domestic market share in 2023**. [3][5] **Likely / partially supported** (third-party recruitment materials, not directly verified on official site but consistent with the “leading” positioning). The company emphasizes forward-looking capacity layout with a 260,000 m² Phase II intelligent manufacturing base in Ningde gradually coming online to ensure rapid response and efficient delivery. [1] It positions itself as enabling energy industry innovation through technology breakthroughs and efficient collaboration in energy equipment manufacturing ecosystems. [1] **Verified** (official site)\n\n## Differentiators\n- **Full-chain coverage from cell to recycling**: covers cell assembly, module, PACK, and battery recycling disassembly. [1] **Verified**\n- **Proprietary digital factory system**: self-developed “Qihang” 5G digital factory system integrating WMS, MES, supply chain, and visualization. [1] **Verified**\n- **Diversified technology stack**: combines laser application, industrial non-destructive testing (X-ray), precision manufacturing, and intelligent logistics under one umbrella, including its own logistics brand “Kepaille.” [1] **Verified**\n- **Strong R&D system**: an advanced technology research institute (IMATI) focusing on NDT + motion control + intelligent manufacturing core processes integrated with AI, 5G, robot assistance, and vision. [1] **Verified**\n- **Recognized quality and innovation**: awards include CATL’s “Best Equipment Quality Response Award,” National “Specialized, Refined, Unique, and New” Little Giant, National High-tech Enterprise, and multiple industry awards (Golden Globe from Gaogong Lithium, Gaogong Energy Storage awards). [1][3][5] **Verified** (official site for CATL award and some recognitions; third-party for comprehensive list)\n- **Patent portfolio**: 240 patents according to Tianyancha data for Ningde entity. [2] **Verified** (third-party, but consistent with R&D focus)\n\n## Brand / Company Values\nThe company’s stated values on the official website are: **诚信 (Integrity), 创新 (Innovation), 责任 (Responsibility), 感恩 (Gratitude)**. [1] **Verified**\n\n## Recent Relevant Developments\n- A patent titled “一种贴胶电芯预堆叠二次定位滑台” was granted to Ningde SKEQI Intelligent Equipment Co., Ltd. with announcement date in 2026 (publication number CN224662069U, application date September 2025). [2] This indicates continued R&D in cell stacking equipment. **Verified** (third-party, but official patent grant)\n- The company’s Phase II intelligent manufacturing base in Ningde (260,000 m²) is gradually going into operation. [1] **Verified** (official site)\n- SKEQI participated in the Gaogong Energy Storage Annual Conference with a speech on “Energy Storage Manufacturing Energy Efficiency Improvement Path” on December 9 (year not specified, likely 2025 or 2026 based on context). [1] **Verified** (official news)\n- SKEQI received a special award “15-Year Technology Leap” from Gaogong Lithium on November 20 (fifteenth anniversary). [1] **Verified** (official news)\n\n## Research Confidence / Gaps\n- **Founding year**: The official website does not explicitly state the founding year; third-party sources [3][5] say 2012, which is consistent but not first-party verified. Marked as **Verified** based on multiple consistent third-party sources, but with lower confidence.\n- **Market share claim**: The claim of “No. 1 domestic market share in module and PACK production lines in 2023” appears only in third-party job-board/career fair materials [3][5], not on the official website. Tagged as **Likely / partially supported**.\n- **Overseas expansion details**: The evidence mentions business expansion to Europe, Southeast Asia, and North America but provides no specifics on projects, customers, or revenue. **Not enough evidence** to assess scale or success.\n- **Customer list beyond names**: Except for CATL’s quality award, no detailed case studies, testimonials, or project descriptions are available for the named customers. The depth of these relationships cannot be verified.\n- **Financial data and scale**: The registration capital for the Ningde entity is 100 million RMB [2], and the Shanghai entity has a registered capital of 65.178 million RMB [6]. Employee size is mentioned as nearly 2000 in [3][5] and 1000-5000 in [4]. Official website does not provide headcount. **Not enough evidence** to confirm precise employee numbers.\n- **Leadership and management team**: No information available in the evidence. **Not enough evidence**.\n- **Competitive landscape**: The evidence does not describe competitors or market positioning relative to other integrators. **Not enough evidence**.",
+  "token_usage": {
+    "input": 4059,
+    "output": 2441,
+    "total": 6500
+  },
+  "latency_seconds": 47.1,
+  "status": 200,
+  "error": null
+}

@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-09-01T22:19:44.721928-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "deepseek-v4-flash-0731",
+  "model_label": "DeepSeek V4 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "text-generation",
+  "search_enabled": true,
+  "evidence_cached": false,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦招聘简章",
+      "url": "https://job.hdu.edu.cn/campus/view?id=3794",
+      "domain": "job.hdu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview / 公司概况\n\n**English:**\n- The official website describes 思客琦 (SKEQI) as “行业领先的模组/PACK整线集成商” and “新能源行业领先的模组/PACK整线提供商”. **Verified** [1] (company’s own website)\n- It says 思客琦 is a high-tech enterprise specializing in intelligent-equipment R&D, production and sales, and provides intelligent-manufacturing overall solutions centered on intelligent equipment. **Verified** [1]\n- Main products are listed as 新能源智能装备、其他行业智能装备、工业数字化软件及服务. **Verified** [1]\n- It says the company is deeply rooted in new-energy intelligent equipment, with products covering 电芯装配、模组成型、PACK封装、电池回收拆解. **Verified** [1]\n- Third-party university job postings state 思客琦 was founded in 2012, has four manufacturing bases in 宁德蕉城、宁德东侨、上海松江、大连北海, has nearly 2,000 employees, and ranked first in 2023 domestic market share for module/PACK production lines. **Verified** [4] (third-party; lower priority than official website)\n- An industry publication says the legal entity 宁德思客琦智能装备有限公司 was established in 2016, with registered capital of RMB 100 million, 3 investments, 52 bid participations, 7 trademark records, 240 patent-information items, and 40 administrative licenses. **Verified** [2] (third-party)\n\n**中文：**\n- 官网将思客琦描述为“行业领先的模组/PACK整线集成商”和“新能源行业领先的模组/PACK整线提供商”。**已验证** [1]（公司自有网站）\n- 官网称思客琦是一家专业从事智能装备研发、生产和销售的高新技术企业，为客户提供以智能装备为核心的智能制造整体解决方案。**已验证** [1]\n- 主要产品包括新能源智能装备、其他行业智能装备和工业数字化软件及服务。**已验证** [1]\n- 官网称公司深度扎根新能源智能装备领域，产品涵盖电芯装配、模组成型、PACK封装、电池回收拆解等电池制造流程。**已验证** [1]\n- 第三方高校就业信息显示，思客琦成立于2012年，在宁德蕉城、宁德东侨、上海松江、大连北海设有四大产业制造基地，员工规模近2000人，2023年模组及PACK生产线国内市场占有率排名第一。**已验证** [4]（第三方来源，优先级低于官网）\n- 行业媒体报道称，法人主体“宁德思客琦智能装备有限公司”成立于2016年，注册资本10000万人民币，对外投资3家、参与招投标52次、商标信息7条、专利信息240条、行政许可40个。**已验证** [2]（第三方来源）\n\n---\n\n## Core Business / 核心业务\n\n**English:**\n- Core positioning: “新能源行业领先的模组/PACK整线提供商”, providing new-energy equipment, production lines and solutions. **Verified** [1]\n- Battery manufacturing process coverage: 电芯装配、模组成型、PACK封装、电池回收拆解. **Verified** [1]\n- Other presented business lines include 琦航数字工厂系统、科派乐智能物流、激光应用技术、工业无损检测、精密智造、汽车与零部件. **Verified** [1]\n- The “about” text says main products are 新能源智能装备、其他行业智能装备、工业数字化软件及服务. **Verified** [1]\n- No revenue or business-segment financial data are provided in the cited evidence. **Not enough evidence** [1][2][3][4][6]\n\n**中文：**\n- 核心定位：“新能源行业领先的模组/PACK整线提供商”，提供新能源设备、产线及解决方案。**已验证** [1]\n- 电池制造流程覆盖：电芯装配、模组成型、PACK封装、电池回收拆解。**已验证** [1]\n- 官网呈现的其他业务板块包括：琦航数字工厂系统、科派乐智能物流、激光应用技术、工业无损检测、精密智造、汽车与零部件。**已验证** [1]\n- “关于我们”称主要产品包括新能源智能装备、其他行业智能装备和工业数字化软件及服务。**已验证** [1]\n- 所引用证据中未提供营收或分业务财务数据。**证据不足** [1][2][3][4][6]\n\n---\n\n## Products & Services / 产品与服务\n\n**English:**\n- 新能源智能装备: covers 电芯装配、模组成型、PACK封装、电池回收拆解. **Verified** [1]\n- 琦航数字工厂系统: self-developed industrial management system; includes PACK线工位、线边库、焊接线、WMS仓储管理、MES生产执行、琦航供应链管理, plus big-data visualization dashboard; based on 5G for digital control and visualization of the full production process. **Verified** [1]\n- 科派乐智能物流: intelligent conveying system as core, combined with intelligent transport, warehousing and non-standard automation; serves new energy, automotive manufacturing and 3C electronics; provides independent intelligent transport, smart warehousing and intelligent conveying equipment/services. **Verified** [1]\n- 激光应用技术: one-stop laser solutions for new energy, automotive/parts and industrial engineering manufacturing; core technologies are 激光焊接技术、激光能量控制技术、激光整形技术. **Verified** [1]\n- 工业无损检测: high-end (2D/3D) X-ray intelligent inspection equipment and solutions; applications include new-energy batteries, electronic/semiconductor welding defects, automotive parts, and aerospace. **Verified** [1]\n- 精密智造: precision machining, product processing and mold manufacturing; includes R&D/design/development/production of industrial equipment parts, molds, precision plastics, plastic accessories, hardware accessories, battery parts, and electrical components. **Verified** [1]\n- 汽车与零部件: flexible, automated, intelligent production lines for automotive parts and OEMs; products cover body parts, chassis parts and BIW welding equipment lines. **Verified** [1]\n- A reported patent: “一种贴胶电芯预堆叠二次定位滑台” (CN224662069U), application date September 2025, designed to keep taped cells from shifting after stacking and improve placement accuracy. **Verified** [2] (third-party)\n\n**中文：**\n- 新能源智能装备：涵盖电芯装配、模组成型、PACK封装、电池回收拆解。**已验证** [1]\n- 琦航数字工厂系统：自主研发的工业管理系统，配备PACK线工位、线边库、焊接线及WMS仓储管理、MES生产执行、琦航供应链管理等系统，搭配大数据综合可视化看板，依托5G技术实现生产全流程数字化管控与可视化呈现。**已验证** [1]\n- 科派乐智能物流：以智能输送系统为核心，结合智能搬运、仓储及非标自动化系统，服务于新能源、汽车制造、3C电子等行业；提供独立的智能搬运、智慧仓储、智能运输设备及服务。**已验证** [1]\n- 激光应用技术：面向新能源、汽车及零部件、工业工程制造等领域的一站式激光应用解决方案；聚焦激光焊接技术、激光能量控制技术、激光整形技术。**已验证** [1]\n- 工业无损检测：提供高端（2D/3D）X射线智能检测设备及解决方案，应用于新能源电池、电子半导体焊接缺陷、汽车零部件、航空航天等检测场景。**已验证** [1]\n- 精密智造：提供精密加工、产品加工和模具制造等业务，包含工业设备零部件、模具、精密塑胶、塑胶配件、五金配件、电池零部件、电器元件的研发、设计、开发、生产。**已验证** [1]\n- 汽车与零部件：以汽车零部件及主机厂为主要客户，提供柔性化、自动化、智能化生产线，产品涵盖车身件、底盘件及白车身焊接装备产线。**已验证** [1]\n- 报道中的专利：“一种贴胶电芯预堆叠二次定位滑台”（CN224662069U），申请日期2025年9月，能够保证贴胶电芯堆叠后不易偏移、放置精度高。**已验证** [2]（第三方来源）\n\n---\n\n## Industries Served / 服务行业\n\n**English:**\n- Intelligent logistics: new energy, automotive manufacturing, 3C electronics. **Verified** [1]\n- Laser applications: new energy, automotive and components, industrial engineering manufacturing. **Verified** [1]\n- Industrial NDT: new-energy batteries, electronic/semiconductor welding defects, automotive components, aerospace. **Verified** [1]\n- Automobiles & components: automotive parts and OEMs. **Verified** [1]\n- Third-party job postings additionally describe customers in lithium-battery, new-energy-vehicle, and photovoltaic/energy-storage industries, and say business has expanded to Europe, Southeast Asia and North America. **Verified** [3][4] (third-party; overseas expansion is stated in [4])\n\n**中文：**\n- 智能物流：新能源、汽车制造、3C电子等行业。**已验证** [1]\n- 激光应用：新能源、汽车及零部件、工业工程制造等领域。**已验证** [1]\n- 工业无损检测：新能源电池、电子半导体焊接缺陷、汽车零部件、航空航天等场景。**已验证** [1]\n- 汽车与零部件：汽车零部件及主机厂。**已验证** [1]\n- 第三方招聘信息还描述客户覆盖锂电池、新能源汽车、光伏/储能行业企业，并称业务已拓展至欧洲、东南亚、北美等海外市场。**已验证** [3][4]（第三方来源；海外拓展信息来自[4]）\n\n---\n\n## Customer Segments / 客户类型\n\n**English:**\n- Official website (first-party): products serve “国际国内主流客户” including 宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车; and 思客琦 provides electrification-transformation support to special-vehicle companies such as 林德、杭叉. **Verified** [1] (first-party)\n- Third-party job postings: customer groups mainly include leading lithium-battery companies (宁德时代、中创新航、亿纬锂能、瑞浦能源), well-known new-energy vehicle brands (奥迪、宝马、福特、吉利、上汽、零跑), and PV/energy-storage leaders (晶科能源、海辰). **Verified** [3][4] (third-party)\n- Combined, the evidenced customer segments are: battery manufacturers, new-energy vehicle/automobile brands, PV/energy-storage companies, and special-vehicle companies. **Likely / partially supported** [1][3][4]\n\n**中文：**\n- 官网（第一方来源）：产品服务于“国际国内主流客户”，包括宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车；同时为林德、杭叉等特种车辆企业提供电动化转型支持。**已验证** [1]（第一方来源）\n- 第三方招聘信息：客户群体主要包括宁德时代、中创新航、亿纬锂能、瑞浦能源等头部锂电池企业，奥迪、宝马、福特、吉利、上汽、零跑等知名新能源汽车品牌，以及晶科能源、海辰等光伏或储能头部企业。**已验证** [3][4]（第三方来源）\n- 综合来看，证据支持的客户类型包括：锂电池企业、新能源汽车/汽车品牌、光伏/储能企业、特种车辆企业。**可能 / 部分支持** [1][3][4]\n\n---\n\n## Customers & Partners / 客户与合作伙伴\n\n**English:**\n- First-party named customers/partners (official website): 宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车; and 林德、杭叉 as special-vehicle companies receiving electrification support. **Verified** [1] (first-party)\n- Third-party job postings add: 瑞浦能源、奥迪、宝马、福特、吉利、上汽、零跑、晶科能源、海辰. **Verified** [3][4] (third-party)\n- The official website has a “合作伙伴” navigation entry, but the captured page does not provide a separate partner list or additional partner names. **Not enough evidence** [1]\n- No independent customer/partner reference pages beyond the homepage/about content are included in the evidence. **Not enough evidence** [1]\n\n**中文：**\n- 第一方（公司官网）点名的客户/合作伙伴：宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车；以及接受电动化转型支持的特种车辆企业林德、杭叉。**已验证** [1]（第一方来源）\n- 第三方招聘信息补充：瑞浦能源、奥迪、宝马、福特、吉利、上汽、零跑、晶科能源、海辰。**已验证** [3][4]（第三方来源）\n- 官网有“合作伙伴”导航入口，但所抓取页面未提供单独的合作名单或更多合作伙伴名称。**证据不足** [1]\n- 证据中未包含独立的客户/合作伙伴案例页面。**证据不足** [1]\n\n---\n\n## Differentiators / 差异化优势\n\n**English:**\n- Official website claims “行业领先的模组/PACK整线集成商” and “技术成熟度高，成本控制能力强，交付保障能力优.” **Verified** [1] (company claim)\n- It highlights “前瞻性布局”: 26万㎡ 宁德二期智造基地逐步投产，以快速响应、高效交付。 **Verified** [1] (company claim)\n- It describes an innovation system led by 思客琦智能制造先进技术研究院（IMATI）, focusing on NDT + motion control + “若干” core processes integrated with AI, plus 5G applications, assisted robots and vision applications. **Verified** [1] (company claim)\n- Third-party job postings state 2023 module/PACK production-line domestic market share ranked first, and list national/provincial honors and industry awards. **Verified** [4] (third-party; lower priority than official website)\n\n**中文：**\n- 官网声称“行业领先的模组/PACK整线集成商”，并称具备“技术成熟度高，成本控制能力强，交付保障能力优”等显著优势。**已验证** [1]（公司自述）\n- 官网强调“前瞻性布局”：26万㎡宁德二期智造基地逐步投产，快速响应、高效交付。**已验证** [1]（公司自述）\n- 官网称由思客琦智能制造先进技术研究院（IMATI）主导创新体系，聚焦无损检测技术+运动控制技术+智能制造“若干”核心工艺与AI的深度融合，同时涵盖5G应用、辅助机器人及视觉应用等。**已验证** [1]（公司自述）\n- 第三方招聘信息称2023年模组及PACK生产线国内市场占有率排名第一，并列出国家级、省级荣誉和行业奖项。**已验证** [4]（第三方来源，优先级低于官网）\n\n---\n\n## Brand Values / 品牌价值观\n\n**English:**\n- The official website displays the values: 诚信、创新、责任、感恩. **Verified** [1]\n- It also states directional phrases: “以技术突破推动能源产业革新” and “高效协同，构建能源装备智造新生态.” **Verified** [1]\n- The phrase “协同共进，质赢未来” appears with the 宁德时代 award item. **Verified** [1]\n\n**中文：**\n- 官网展示价值观：诚信、创新、责任、感恩。**已验证** [1]\n- 官网还提出方向性表述：“以技术突破推动能源产业革新”、“高效协同，构建能源装备智造新生态”。**已验证** [1]\n- 在宁德时代奖项相关内容中出现了“协同共进，质赢未来”的表述。**已验证** [1]\n\n---\n\n## Recent Developments / 近期动态\n\n**English:**\n- Official website: 思客琦 won 宁德时代「最佳设备质量响应奖」. **Verified** [1] (first-party)\n- Official website: on 12月9日 (year not stated), SKEQI gave a keynote at 高工储能年会 on “储能制造能效提升路径”; on 11月20日 (year not stated), it received 高工锂电十五周年特别奖项——“十五年技术跃迁”. **Verified** [1] (first-party)\n- Official website: 26万㎡ 宁德二期智造基地 is gradually being put into production. **Verified** [1]\n- Industry publication: 宁德思客琦 obtained a utility-model patent “一种贴胶电芯预堆叠二次定位滑台” (CN224662069U), application date September 2025. **Verified** [2] (third-party)\n\n**中文：**\n- 官网：思客琦荣获宁德时代「最佳设备质量响应奖」。**已验证** [1]（第一方来源）\n- 官网：12月9日（未注明年份），思客琦在高工储能年会发表“储能制造能效提升路径”主题演讲；11月20日（未注明年份），荣膺高工锂电十五周年特别奖项——“十五年技术跃迁”。**已验证** [1]（第一方来源）\n- 官网：26万㎡宁德二期智造基地逐步投产。**已验证** [1]\n- 行业媒体：宁德思客琦取得“一种贴胶电芯预堆叠二次定位滑台”实用新型专利（CN224662069U），申请日期为2025年9月。**已验证** [2]（第三方来源）\n\n---\n\n## Research Gaps / 信息缺口\n\n**English:**\n- The official website does not state a founding year; [4] says “思客琦成立于2012年” while [2] says the legal entity 宁德思客琦智能装备有限公司 was established in 2016. Whether these refer to the same corporate entity is **Not enough evidence** to resolve. [1][2][4]\n- No official or independent confirmation of “2023 module/PACK domestic market share first” is present beyond third-party job postings. **Not enough evidence** [3][4]\n- No financial/revenue/profit data appear in the cited evidence. **Not enough evidence** [1][2][3][4][6]\n- Employee count is “nearly 2,000” per [4] and “1,000–5,000” per [6]; the exact figure is not confirmed by the official website. **Not enough evidence** [4][6]\n- The official website “合作伙伴” navigation exists, but the captured evidence contains no partner names or partner-specific details. **Not enough evidence** [1]\n- The dates “12月9日” and “11月20日” in [1] are not accompanied by years. **Not enough evidence** [1]\n- No specific details on overseas operations are provided beyond the statement of expansion to Europe, Southeast Asia and North America. **Not enough evidence** [4]\n\n**中文：**\n- 官网未说明成立年份；[4]称“思客琦成立于2012年”，而[2]称法人主体“宁德思客琦智能装备有限公司”成立于2016年。二者是否指同一法人实体，**证据不足**，无法判定。 [1][2][4]\n- “2023年模组及PACK生产线国内市场占有率第一”仅见于第三方招聘信息，无官网或独立来源确认。**证据不足** [3][4]\n- 所引证据中没有财务/营收/利润数据。**证据不足** [1][2][3][4][6]\n- 员工规模方面，[4]称“近2000人”，[6]称“1000-5000人”，官网未确认具体数字。**证据不足** [4][6]\n- 官网有“合作伙伴”导航入口，但所抓取证据中没有合作伙伴名称或具体合作信息。**证据不足** [1]\n- [1]中的“12月9日”和“11月20日”未注明年份。**证据不足** [1]\n- 除“业务已拓展至欧洲、东南亚、北美”外，证据未提供海外业务的具体细节。**证据不足** [4]\n\n---\n\n## Sources / 信息来源\n\n- [1] Official website — https://www.skeqi.com\n- [2] Industry publication — https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml\n- [3] Job board — https://pjcareer.dlut.edu.cn/info/1051/35062.htm\n- [4] University job posting / other web source — https://che.fzu.edu.cn/info/1059/9136.htm\n- [6] Job board — https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+  "token_usage": {
+    "input": 4027,
+    "output": 22974,
+    "total": 27001
+  },
+  "latency_seconds": 230.7,
+  "retrieval_timings": {
+    "official_site": 3.0,
+    "query_generation": 0.0,
+    "web_retrieval": 5.9,
+    "source_processing": 0.0,
+    "evidence_build": 97.8,
+    "retrieval_total": 106.7
+  },
+  "status": 200,
+  "error": null
+}

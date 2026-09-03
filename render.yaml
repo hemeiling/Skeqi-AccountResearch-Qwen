@@ -1,0 +1,75 @@
+# Render deployment for the STANDALONE Account Research app.
+#
+# This service is completely independent of the Skeqi-EmailDrafter CRM: its own
+# models, retrieval, Apollo, credentials, reports and storage. The CRM embeds it
+# in an iframe and shares nothing else with it.
+#
+# IMPORTANT — one worker only. Job and batch state lives in memory
+# (app.JOBS, app.BATCHES) and background threads own it, so a second worker
+# would answer polls for jobs it has never seen. Concurrency comes from threads.
+services:
+  - type: web
+    name: skeqi-account-research
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 8 --timeout 600 --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+
+      # ── Access gate ──────────────────────────────────────────────────────
+      # Without BOTH of these the app is open to anyone with the URL.
+      - key: APP_ACCESS_USERNAME
+        sync: false
+      - key: APP_ACCESS_PASSWORD
+        sync: false
+      - key: APP_ACCESS_SECRET      # optional; defaults to a value derived from the password
+        sync: false
+
+      # ── Embedding ────────────────────────────────────────────────────────
+      # The CRM origin allowed to frame this app. Scheme + host, no path.
+      # Never use "*".
+      - key: ALLOWED_FRAME_ANCESTORS
+        sync: false
+
+      # ── DashScope / Bailian ──────────────────────────────────────────────
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: DASHSCOPE_WORKSPACE_ID
+        sync: false
+      - key: DASHSCOPE_BASE_URL
+        sync: false
+      - key: DASHSCOPE_PATH_TEXT
+        value: /services/aigc/text-generation/generation
+      - key: DASHSCOPE_PATH_MULTIMODAL
+        value: /services/aigc/multimodal-generation/generation
+      - key: DASHSCOPE_MULTIMODAL_MODELS
+        value: qwen3.6-flash,qwen3.7-plus,qwen3.8-max,qwen3.8-flash
+      - key: AI_MODEL_QUALITY
+        value: deepseek-v4-pro
+      - key: AI_MODEL_FAST
+        value: deepseek-v4-flash-0731
+      - key: AI_MODEL_CITATION
+        value: qwen3.6-flash
+      - key: AI_MODEL_FALLBACKS     # optional, for 403 AccessDenied models
+        sync: false
+      - key: AI_SEARCH_STRATEGY
+        value: turbo
+      - key: AI_SEARCH_ENABLED
+        value: "true"
+      - key: AI_SOURCE_ENABLED
+        value: "true"
+      - key: AI_CITATION_ENABLED
+        value: "true"
+      - key: AI_CITATION_FORMAT
+        value: "[<number>]"
+      - key: AI_REQUEST_TIMEOUT_MS
+        value: "90000"
+
+      # ── Apollo (optional people enrichment) ──────────────────────────────
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: APOLLO_ENRICH_LIMIT
+        value: "12"

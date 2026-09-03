@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-09-01T21:58:28.261830-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "qwen3.6-flash",
+  "model_label": "Qwen 3.6 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "multimodal-generation",
+  "search_enabled": true,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦招聘简章",
+      "url": "https://job.hdu.edu.cn/campus/view?id=3794",
+      "domain": "job.hdu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview\nSKEQI (思客琦) is a high-tech enterprise specializing in the research, development, production, and sales of intelligent equipment, delivering comprehensive smart manufacturing solutions anchored by proprietary hardware systems. [1] **Verified**\nThe company is headquartered at No. 115 Shugang Road, Jiaocheng District, Ningde City, Fujian Province, China. [1][6] **Verified**\nIt operates four major industrial manufacturing bases located in Ningde (Jiaocheng & Dongqiao campuses), Shanghai (Songjiang), and Dalian (Beihai). [3][4] **Verified**\nCorporate scale reports indicate a workforce of approximately 2,000 employees, though precise headcounts fluctuate and are not officially quantified beyond ranges. [3][4][6] **Verified**\nA founding year discrepancy exists: official channels omit it, whereas third-party recruitment materials cite 2012, and a corporate registry excerpt notes 2016; applying source priority rules, neither first-party nor consistent cross-referencing resolves the gap. **Not enough evidence**\n\n## Main Products & Services\nNew Energy Intelligent Equipment: Provides full-process automation covering cell assembly, module formation, PACK packaging, and battery recycling/disassembly. [1] **Verified**\nQIHANG Digital Factory System: A self-developed 5G-enabled industrial management platform integrating WMS, MES, supply chain tracking, and big-data visual dashboards for end-to-end production digitization. [1] **Verified**\nKepile Intelligent Logistics: Offers flexible smart transport, smart warehousing, and non-standard automated logistics subsystems tailored for factory automation upgrades. [1] **Verified**\nLaser Application Technology: Delivers turnkey laser solutions emphasizing welding, energy control, and beam-shaping technologies with rapid core-component turnaround. [1] **Verified**\nIndustrial Non-Destructive Testing (NDT): Manufactures high-end 2D/3D X-ray inspection equipment for detecting defects in battery cells, semiconductor soldering, automotive parts, and aerospace components. [1] **Verified**\nPrecision Manufacturing & Automotive Lines: Supplies custom molds, precision plastics/hardwares, and fully automated welding lines for auto body/chassis fabrication. [1] **Verified**\nIP Portfolio: Maintains over 240 registered patents, including recent devices like a secondary-positioning slide for taped-cell pre-stacking to prevent misalignment. [2] **Verified**\n\n## Industries / Markets Served\nPrimary vertical: New energy battery manufacturing. [1] **Verified**\nSecondary verticals: Automobile & component manufacturing, 3C electronics, photovoltaic/solar energy, grid-scale storage, special-purpose vehicles, and aerospace. [1][3][4] **Verified**\nGeographic footprint: Strong domestic penetration in China, with active commercial expansion into Europe, Southeast Asia, and North America. [3][4] **Verified**\n\n## Customer Segments\nTop-tier lithium battery manufacturers requiring high-capacity pack/module lines. [3][4] **Verified**\nAutomotive OEMs (both NEV startups and legacy brands) needing lightweight, automated body/chassis welding lines. [3][4] **Verified**\nPhotovoltaic and energy storage developers scaling gigafactory infrastructure. [3][4] **Verified**\nSpecialty vehicle makers undergoing electrification retrofits or new model launches. [1] **Verified**\nBroad industrial clients seeking modular automation, digitalization, and precision machining services. [1] **Likely / partially supported**\n\n## Key Customers / Partners\n*First-Party Claims (Official Website [1]):* CATL, EVE Energy, CALB (中创新航), Gotion High-tech, XPeng, Leapmotor, Linde Materials Handling, Hangcha Group. [1] **Verified**\n*Third-Party Claims (Campus Recruitment/Media [3][4]):* Ruipu Energy, Audi, BMW, Ford Motor, Geely, SAIC Motors, Jinko Solar, Hithium Energy. [3][4] **Verified**\n*Strategic/Award Partners:* Recognized by CATL with the “Best Equipment Quality Response Award”; featured speaker and award recipient at High Energy Storage/Lithium industry conferences. [1][3][4] **Verified**\n\n## Competitive / Strategic Positioning\nMarket leadership claim: Asserts #1 domestic market share for module and PACK production lines. [3][4] **Verified**\nCapacity scaling strategy: Rolling out a 260,000 sqm Phase II smart manufacturing base in Ningde to accelerate delivery cycles and lock in advanced capacity. [1] **Verified**\nTechnology-driven integration: Houses the IMATI Smart Manufacturing Advanced Technology Research Institute, systematically merging core process engineering with AI, 5G, and machine vision. [1] **Verified**\nValue proposition: Emphasizes mature technology stacks, aggressive cost control, and guaranteed delivery SLAs to de-risk clients’ high-speed capacity deployments. [1] **Verified**\nGlobal posture: Transitioning from domestic consolidation to structured overseas market penetration across three major continental regions. [3][4] **Verified**\n\n## Differentiators\nFull-lifecycle integration: Unique ability to deliver monolithic turnkey lines spanning electrochemical cell handling through PACK sealing and end-of-life battery disassembly. [1] **Verified**\nClosed-loop digital stack: In-house QIHANG software natively couples with physical equipment and material handling, avoiding third-party middleware fragmentation. [1] **Verified**\nCross-pollination engineering: Combines laser optics, X-ray NDT, precision tooling, and robotics under one vendor umbrella, enabling highly customized non-standard automation. [1] **Verified**\nInstitutional credibility: Accumulated multiple national-tier recognitions including “Specialized & Innovative Little Giant,” “National Service-Oriented Manufacturing Demonstration Enterprise,” and provincial “Manufacturing Single Champion” status. [3][4] **Verified**\n\n## Brand / Company Values\nExplicit cultural pillars: Integrity (诚信), Innovation (创新), Responsibility (责任), Gratitude (感恩). [1] **Verified**\nMission framing: Positions itself as a technological catalyst for energy-sector modernization, prioritizing synergistic ecosystem building and continuous manufacturing paradigm shifts. [1] **Verified**\n\n## Recent Relevant Developments\nFacility ramp-up: Ningde Phase II production complex is entering phased operational commissioning to boost throughput. [1] **Verified**\nPatent milestone: Successfully granted utility model CN224662069U for a taped-cell pre-stacking secondary positioning mechanism. [2] **Verified**\nIndustry awards & thought leadership: Received “2024 Enterprise of the Year” from High Energy Storage association, won the “15-Year Technology Leap” honor, and delivered keynote presentations on storage manufacturing energy-efficiency optimization. [1][3][4] **Verified**\nTalent acquisition push: Actively running 2026 campus hiring programs targeting mechanical, process, electrical, machine vision, and algorithm engineers to sustain R&D velocity. [3] **Verified**\n\n## Research Confidence / Gaps\nFounding year mismatch: Official sources do not disclose a launch date, while third-party recruitment documents list 2012 and a corporate registry scrape indicates 2025 filing referencing 2016; conflicting tiers prevent resolution. **Not enough evidence**\nFinancial transparency: No revenue figures, gross margins, order backlog, R&D spend ratios, or CapEx allocations are disclosed across any provided source. **Not enough evidence**\nOverseas commercial depth: Though global expansion is announced, specific foreign market revenue splits, localized partner networks, or post-sales service footprints remain unspecified. **Likely / partially supported**\nCustomer validation granularity: Several named accounts appear exclusively in third-party university posting sheets rather than official case study pages or press releases; tier-level engagement depth cannot be confirmed. **Verified (name recognition), but engagement scope: Not enough evidence**\nDate artifact in patent record: One industry publication timestamp lists an August 2026 grant date, which contradicts standard historical sequencing and likely reflects a web-scraper metadata error. **Likely / partially supported**",
+  "token_usage": {
+    "input": 3787,
+    "output": 5777,
+    "total": 9564
+  },
+  "latency_seconds": 43.4,
+  "status": 200,
+  "error": null
+}

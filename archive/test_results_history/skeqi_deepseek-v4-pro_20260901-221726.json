@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-09-01T22:17:26.940958-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "deepseek-v4-pro",
+  "model_label": "DeepSeek V4 Pro",
+  "protocol": "DashScope Native",
+  "endpoint": "text-generation",
+  "search_enabled": true,
+  "evidence_cached": false,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦招聘简章",
+      "url": "https://job.hdu.edu.cn/campus/view?id=3794",
+      "domain": "job.hdu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview / 公司概况\n**English:**\nSKEQI (思客琦) is a high-tech enterprise specializing in the R&D, production and sales of intelligent equipment, providing overall intelligent manufacturing solutions with intelligent equipment as the core[1]. The company is deeply rooted in the new energy intelligent equipment field, and describes itself as a leading module/PACK line integrator in the new energy industry[1]. The company was founded in 2012 (based on a campus recruitment presentation; the official website does not explicitly state the founding year)[4] **Likely**. Its headquarters address is No. 115, Shugang Road, Jiaocheng District, Ningde City, Fujian Province[1]. The company has four major industrial manufacturing bases in Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai[3][4] **Likely**. The company has won honors such as the “National May 1st Labor Award”, the National Specialized and Sophisticated “Little Giant” Enterprise, the “National Service-oriented Manufacturing Demonstration Enterprise”, National High-tech Enterprise, and the Fujian Province “Manufacturing Single Champion” Enterprise, among other national and provincial-level recognitions[3][4] **Likely** (from third-party recruitment materials; the official site mentions an “Honors and Qualifications” section but does not list them on the captured page).\n\n**中文：**\n思客琦（SKEQI）是一家专业从事智能装备研发、生产和销售的高新技术企业，为客户提供以智能装备为核心的智能制造整体解决方案[1]。公司深度扎根新能源智能装备领域，并定位为新能源行业领先的模组/PACK整线集成商[1]。公司成立于2012年（依据校园宣讲会信息，官网未明确写明成立年份）[4] **Likely**。总部地址为福建省宁德市蕉城区疏港路115号[1]。公司在宁德蕉城、宁德东侨、上海松江、大连北海设有四大产业制造基地[3][4] **Likely**。公司先后获评“全国五一劳动奖状”、国家专精特新“小巨人”企业、“国家服务型制造示范企业”、国家级高新技术企业、福建省“制造业单项冠军”企业等国家级与省部级荣誉[3][4] **Likely**（来自第三方招聘材料；官网页面有“荣誉资质”板块但未显示具体列表）。\n\n## Core Business / 核心业务\n**English:**\nSKEQI’s core business is providing intelligent equipment and manufacturing solutions for the new energy sector, covering battery manufacturing processes including cell assembly, module formation, PACK packaging, and battery recycling and disassembly[1]. The company also provides intelligent equipment for other industries, and industrial digital software and services[1]. A key focus is the “Qihang digital factory system” (琦航数字工厂系统), its self-developed industrial management system[1]. Other business lines include intelligent logistics (marketed under the “KePaile” (科派乐) brand), laser application technology, industrial non-destructive testing, precision intelligent manufacturing, and automation for automobiles and components[1].\n\n**中文：**\n思客琦的核心业务是为新能源领域提供智能装备与制造解决方案，覆盖电池制造流程：电芯装配、模组成型、PACK封装、电池回收拆解等[1]。公司也提供其他行业智能装备以及工业数字化软件与服务[1]。其重点包括自主研发的“琦航数字工厂系统”[1]。其他业务线包括：智能物流（以“科派乐”品牌向市场推广）、激光应用技术、工业无损检测、精密智造以及汽车与零部件自动化[1]。\n\n## Products & Services / 产品与服务\n**English:**\n- **New Energy Intelligent Equipment**: Solutions for cell assembly, module formation, PACK packaging, and battery recycling/disassembly[1].\n- **Qihang Digital Factory System (琦航数字工厂系统)**: Self-developed industrial management system integrating PACK line stations, line-side warehouses, welding lines, WMS, MES, supply chain management, and big data visualization dashboards, utilizing 5G for digital control and visualization of the entire production process[1].\n- **KePaile Intelligent Logistics (科派乐智能物流)**: Intelligent conveying, handling, warehousing, and non-standard automation systems for industries such as new energy, automotive manufacturing, and 3C electronics, offered under the independent brand “KePaile”[1].\n- **Laser Application Technology**: One-stop laser solutions for new energy, automotive/parts, and industrial engineering, focusing on laser welding, energy control, and beam shaping technologies[1].\n- **Industrial Non-Destructive Testing**: High-end (2D/3D) X-ray intelligent inspection equipment for battery, electronic semiconductor welding defects, automotive parts, aerospace, etc.[1].\n- **Precision Intelligent Manufacturing (精密智造)**: Precision machining, product processing, and mold manufacturing, including industrial equipment components, molds, precision plastics, battery parts, and electrical components[1].\n- **Automobiles and Components**: Flexible, automated, and intelligent production lines for body parts, chassis parts, and body-in-white welding equipment[1].\n- A recently disclosed patent: “A secondary positioning slide table for pre-stacking adhesive tape-wrapped cells”, which can ensure stacked adhesive tape cells do not shift easily and have high placement accuracy; the patent was granted to Ningde SKEQI Intelligent Equipment Co., Ltd. (publication number CN224662069U, application date September 2025)[2] **Verified** (third-party industry publication).\n\n**中文：**\n- **新能源智能装备**：电芯装配、模组成型、PACK封装、电池回收拆解等解决方案[1]。\n- **琦航数字工厂系统**：自主研发的工业管理系统，集成PACK线工位、线边库、焊接线、WMS、MES、供应链管理及大数据综合可视化看板，依托5G实现生产全流程数字化管控与可视化呈现[1]。\n- **科派乐智能物流**：以智能输送系统为核心，结合搬运、仓储及非标自动化系统，服务新能源、汽车制造、3C电子等行业，以独立品牌“科派乐”运营[1]。\n- **激光应用技术**：面向新能源、汽车及零部件、工业工程的一站式激光解决方案，聚焦激光焊接、能量控制、激光整形技术[1]。\n- **工业无损检测**：高端（2D/3D）X射线智能检测设备，应用于新能源电池、电子半导体焊接缺陷、汽车零部件、航空航天等领域[1]。\n- **精密智造**：精密加工、产品加工和模具制造，包括工业设备零部件、模具、精密塑胶、电池零部件、电器元件等[1]。\n- **汽车与零部件**：为车身件、底盘件、整车白车身提供柔性化、自动化、智能化焊接装备产线[1]。\n- 近期公开专利：“一种贴胶电芯预堆叠二次定位滑台”，能够保证贴胶电芯堆叠后不易偏移，放置精度高；该专利由宁德思客琦智能装备有限公司取得（授权公告号CN224662069U，申请日2025年9月）[2] **Verified**（第三方行业媒体）。\n\n## Industries Served / 服务行业\n**English:**\nBased on the official website, the company serves the new energy battery industry, automotive manufacturing (including new energy vehicles), 3C electronics, aerospace, and special-purpose vehicles (e.g., forklifts)[1]. The intelligent logistics and laser solutions are explicitly mentioned for new energy, automotive manufacturing, and 3C electronics[1]. Non-destructive testing solutions are applied to new energy batteries, electronic semiconductors, automotive parts, and aerospace[1]. Special vehicle electrification support is provided to companies like Linde and Hangcha[1].\n\n**中文：**\n根据官网信息，公司服务新能源电池行业、汽车制造（含新能源汽车）、3C电子、航空航天以及特种车辆（如叉车）等领域[1]。智能物流与激光解决方案明确提及新能源、汽车制造、3C电子[1]。无损检测方案应用于新能源电池、电子半导体、汽车零部件、航空航天[1]。为林德、杭叉等特种车辆企业提供电动化转型支持[1]。\n\n## Customer Segments / 客户类型\n**English:**\nSKEQI’s customers include major lithium battery manufacturers, new energy vehicle brands, photovoltaic/energy storage companies, and special vehicle enterprises[1][3][4]. The official website lists being a supplier to mainstream domestic and international customers such as CATL (宁德时代), EVE Energy (亿纬锂能), CALB (中创新航), Gotion High-tech (国轩高科), XPeng (小鹏), and Leapmotor (零跑汽车), as well as electrification support for Linde and Hangcha[1] **Verified** (first-party). Third-party recruitment materials further list customer names including REPT Battero (瑞浦能源), Audi, BMW, Ford, Geely, SAIC, Jinko Energy (晶科能源), and HiTHIUM (海辰) among the head lithium battery, new energy vehicle, and PV/storage companies served[3][4] **Likely** (company-provided information via third-party platforms).\n\n**中文：**\n思客琦的客户包括头部锂电池企业、新能源汽车品牌、光伏/储能企业以及特种车辆企业[1][3][4]。官网明确列出公司产品已服务于宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车等国际国内主流客户，并为林德、杭叉等特种车辆企业提供电动化转型支持[1] **Verified**（第一方）。第三方招聘材料进一步列出客户群体包括瑞浦能源、奥迪、宝马、福特、吉利、上汽、晶科能源、海辰等头部锂电池、新能源汽车品牌及光伏/储能头部企业[3][4] **Likely**（公司通过第三方平台发布的信息）。\n\n## Customers & Partners / 客户与合作伙伴\n**English:**\n- **First-party (official website):** CATL (宁德时代), EVE Energy (亿纬锂能), CALB (中创新航), Gotion High-tech (国轩高科), XPeng (小鹏), Leapmotor (零跑汽车), Linde (林德), Hangcha (杭叉)[1].\n- **Third-party (recruitment materials):** REPT Battero (瑞浦能源), Audi, BMW, Ford, Geely, SAIC, Jinko Energy (晶科能源), HiTHIUM (海辰)[3][4].\nThe official website also mentions that SKEQI has won the “Best Equipment Quality Response Award” from CATL (宁德时代)[1], indicating a recognized supplier relationship with CATL. The site contains a “Partners” (合作伙伴) page, but no specific partner list is shown in the captured evidence. No further details on partnerships are available.\n\n**中文：**\n- **第一方（官网）：** 宁德时代、亿纬锂能、中创新航、国轩高科、小鹏、零跑汽车、林德、杭叉[1]。\n- **第三方（招聘材料）：** 瑞浦能源、奥迪、宝马、福特、吉利、上汽、晶科能源、海辰[3][4]。\n官网还提及思客琦荣获宁德时代“最佳设备质量响应奖”[1]，表明与宁德时代有被认可的供应商关系。官网设有“合作伙伴”页面，但所抓取内容中未显示具体合作伙伴名单。无更多合作伙伴详情。\n\n## Differentiators / 差异化优势\n**English:**\n- High market share: The company’s module and PACK production lines held the No.1 domestic market share in 2023, according to recruitment materials[3][4] **Likely** (third-party platform).\n- Self-developed digital system: “Qihang Digital Factory System” is independently developed and utilizes 5G for full-process digital control, forming a key technological differentiator[1] **Verified**.\n- Independent logistics brand: “KePaile” (科派乐) brand for intelligent logistics, incubated from years of service experience, offered as an independent business[1].\n- R&D organization: The company has a comprehensive innovation system led by the “Smart Manufacturing Advanced Technology Research Institute (IMATI)”, focusing on the deep integration of non-destructive testing, motion control, smart manufacturing, and AI, along with 5G applications, assistive robots, and vision applications[1].\n- Manufacturing scale: An additional 260,000 m² second-phase intelligent manufacturing base in Ningde is gradually being put into production, enhancing rapid response and delivery capability[1].\n- Stated advantages: The company claims “high technical maturity, strong cost control capability, and excellent delivery assurance advantages”[1] **Verified** as a company claim.\n- Industry recognition: Awards such as “2023 Product of the Year” (Gaogong Lithium Golden Globe Award), “2023 Technology of the Year” and “2024 Enterprise of the Year” (Gaogong Energy Storage) have been mentioned in recruitment materials[3][4] **Likely**.\n\n**中文：**\n- 高市场份额：据招聘材料，2023年模组及PACK生产线国内市场占有率排名第一[3][4] **Likely**（第三方平台）。\n- 自研数字系统：“琦航数字工厂系统”为自主研发，利用5G实现全流程数字化管控，是重要技术差异化优势[1] **Verified**。\n- 独立物流品牌：基于多年服务经验孵化出“科派乐”智能物流品牌，作为独立业务提供[1]。\n- 研发组织：公司拥有完善的科技创新体系，由“智能制造先进技术研究院（IMATI）”主导，聚焦无损检测+运动控制+智能制造与AI的深度融合，涵盖5G应用、辅助机器人及视觉应用等[1]。\n- 制造规模：26万平方米的宁德二期智造基地逐步投产，提升快速响应与高效交付能力[1]。\n- 公司声称的优势：“技术成熟度高，成本控制能力强，交付保障能力优”[1] **Verified**（公司主张）。\n- 行业认可：招聘材料中提及公司获得高工锂电金球奖“2023年度产品”、高工储能“2023年度技术”、“2024年度企业”等奖项[3][4] **Likely**。\n\n## Brand Values / 品牌价值观\n**English:**\nThe official website displays the brand values: “Integrity, Innovation, Responsibility, Gratitude” (诚信 创新 责任 感恩)[1] **Verified**.\n\n**中文：**\n官网展示的品牌价值观为：“诚信 创新 责任 感恩”[1] **Verified**。\n\n## Recent Developments / 近期动态\n**English:**\n- The 260,000 m² second-phase intelligent manufacturing base in Ningde is gradually starting production to secure capacity in advance[1] **Verified**.\n- SKEQI won the “Best Equipment Quality Response Award” from CATL (宁德时代)[1] **Verified**.\n- The company delivered a keynote speech titled “Energy Storage Manufacturing Energy Efficiency Improvement Path” at the Gaogong Energy Storage Annual Conference on December 9, aiming to help customers quickly build an investment return loop[1] **Verified**.\n- On November 20, SKEQI received the “Fifteen-Year Technology Leap” special award at the 15th anniversary of Gaogong Lithium[1] **Verified**.\n- A patent for a “secondary positioning slide table for pre-stacking adhesive tape cells” was granted to Ningde SKEQI Intelligent Equipment Co., Ltd. (publication date likely around August 2026, application date September 2025)[2] **Verified** (third-party).\n\n**中文：**\n- 26万平方米的宁德二期智造基地逐步投产，提前锁定优势产能[1] **Verified**。\n- 思客琦荣获宁德时代“最佳设备质量响应奖”[1] **Verified**。\n- 12月9日，公司在高工储能年会发表“储能制造能效提升路径”主题演讲，助力客户快速构建投资回报闭环[1] **Verified**。\n- 11月20日，思客琦荣膺高工锂电十五周年特别奖项——“十五年技术跃迁”[1] **Verified**。\n- 宁德思客琦智能装备有限公司取得“一种贴胶电芯预堆叠二次定位滑台”专利（授权公告日约2026年8月，申请日2025年9月）[2] **Verified**（第三方）。\n\n## Research Gaps / 信息缺口\n**English:**\n- The exact founding year is not stated on the official website; only third-party recruitment materials indicate 2012[4].\n- Specific financial data, revenue, and detailed employee count are not available from the provided evidence (recruitment materials mention “nearly 2000 employees” but are not official financial disclosures)[3][4].\n- Detailed list of awards and qualifications is not shown on the official website’s captured page; only reference to third-party lists[3][4].\n- The official “Partners” page content is not captured; no detailed partner information beyond the customer names is available.\n- The company’s overseas business expansion (Europe, Southeast Asia, North America) is mentioned in recruitment materials[3][4] but not confirmed on the official website.\n- The “Koepale” logistics brand’s independent entity details are not provided.\n\n**中文：**\n- 官网未明确注明公司成立年份，仅第三方校园招聘材料显示为2012年[4]。\n- 现有证据中未提供具体财务数据、营收及准确员工人数（招聘材料提及“员工规模近2000人”，但非官方财务披露）[3][4]。\n- 官网抓取页面未显示详细荣誉资质列表，仅能参考第三方材料中的列举[3][4]。\n- 官网“合作伙伴”页面内容未被抓取，除客户名称外无更多合作伙伴详情。\n- 海外业务拓展（欧洲、东南亚、北美）在招聘材料中提及[3][4]，但官网未直接确认。\n- “科派乐”智能物流品牌的独立实体细节未提供。\n\n## Sources / 信息来源\n[1] https://www.skeqi.com\n[2] https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml\n[3] https://pjcareer.dlut.edu.cn/info/1051/35062.htm\n[4] https://che.fzu.edu.cn/info/1059/9136.htm\n[5] https://job.hdu.edu.cn/campus/view?id=3794 (expired, no usable content)\n[6] https://jygl.dep.dlpu.edu.cn/company/view/id/915039 (basic registration info only)",
+  "token_usage": {
+    "input": 3948,
+    "output": 5262,
+    "total": 9210
+  },
+  "latency_seconds": 92.9,
+  "retrieval_timings": {
+    "official_site": 3.0,
+    "query_generation": 0.0,
+    "web_retrieval": 5.9,
+    "source_processing": 0.0,
+    "evidence_build": 97.8,
+    "retrieval_total": 106.7
+  },
+  "status": 200,
+  "error": null
+}

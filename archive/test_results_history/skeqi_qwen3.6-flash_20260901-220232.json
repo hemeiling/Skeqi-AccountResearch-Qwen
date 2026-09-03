@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-09-01T22:02:32.388895-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "qwen3.6-flash",
+  "model_label": "Qwen 3.6 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "multimodal-generation",
+  "search_enabled": true,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "「思客琦自动化工程招聘」_2026年思客琦自动化工程招聘信息- 智通直聘",
+      "url": "https://www.job5156.com/gongsi/gse79f14b450c4fec22e22caff419280c0/",
+      "domain": "www.job5156.com",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview\n- SKEQI (思客琦) is a high-tech enterprise specializing in the R&D, production, and sales of intelligent manufacturing equipment. (**Verified**): [1], [3]\n- The company was established in 2012. (**Verified**): [3], [5], [6]\n- Its headquarters and primary operational base are located in Ningde City, Fujian Province, at No. 115 Shugang Road, Jiaocheng District. (**Verified**): [1]\n- The company operates four major industrial manufacturing bases across Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai. (**Verified**): [3], [5]\n- Current employee scale is approximately 2,000 people. (**Verified**): [3], [5]\n\n## Main Products & Services\n- **New Energy Intelligent Equipment:** Provides complete turnkey production lines for cell assembly, module formation, PACK encapsulation, and battery recycling/disassembly. (**Verified**): [1], [3], [5]\n- **Digital Factory Systems:** Offers the proprietary QIHANG 5G Digital Factory System, integrating pack line workstations, boundary warehouses, WMS, MES, and supply chain management with big-data visualization dashboards. (**Verified**): [1]\n- **Intelligent Logistics:** Deploys the \"Ke Pai Le\" brand to deliver smart conveying, material handling, warehousing, and non-standard automation systems. (**Verified**): [1]\n- **Laser Application Technology:** Delivers one-stop laser solutions for industrial manufacturing, focusing on laser welding, laser energy control, and laser beam shaping technologies. (**Verified**): [1]\n- **Industrial Non-Destructive Testing (NDT):** Manufactures and deploys high-end 2D/3D X-ray smart inspection equipment and solutions. (**Verified**): [1]\n- **Precision Intelligent Manufacturing:** Handles the R&D, design, development, and production of industrial equipment components, molds, precision plastics, hardware accessories, and battery/electrical parts. (**Verified**): [1]\n- **Automotive & Components:** Supplies flexible, automated, and intelligent production lines for automotive body panels, chassis components, and white-body welding operations. (**Verified**): [1]\n\n## Industries / Markets Served\n- New energy lithium-ion battery manufacturing. (**Verified**): [1], [3], [5]\n- Automobile and auto parts manufacturing. (**Verified**): [1], [3], [5]\n- Photovoltaic and energy storage industries. (**Verified**): [3], [5]\n- 3C electronics and semiconductor sectors. (**Verified**): [1]\n- Aerospace industry. (**Verified**): [1]\n- General industrial engineering manufacturing. (**Verified**): [1]\n\n## Customer Segments\n- Leading lithium battery cell and power/storage system manufacturers. (**Verified**): [1], [3], [5]\n- New energy vehicle (NEV) original equipment manufacturers (OEMs). (**Verified**): [1], [3], [5]\n- Photovoltaic and energy storage enterprise clients. (**Verified**): [3], [5]\n- Special vehicle operators and industrial logistics companies. (**Verified**): [1]\n\n## Key Customers / Partners\n- **Battery & Energy Storage Manufacturers:** CATL (宁德时代), CALB (中创新航), EVE Energy (亿纬锂能), Gotion High-tech (国轩高科), Ronbay Energy (瑞浦能源), and Hithium (海辰). (**Verified**): [1], [3], [5] (First-party source: [1]; Third-party sources: [3], [5])\n- **Automotive OEMs:** XPeng (小鹏), Leapmotor (零跑), Audi, BMW, Ford, Geely, and SAIC. (**Verified**): [1], [3], [5] (First-party source: [1]; Third-party sources: [3], [5])\n- **Special Vehicle Enterprises:** Linde (林德) and Hangcha (杭叉). (**Verified**): [1] (First-party source)\n- No formal strategic technology, distribution, or joint-venture partners are documented in the provided evidence. (**Not enough evidence**)\n\n## Competitive / Strategic Positioning\n- Held the #1 domestic market share for module and PACK production lines in 2023. (**Verified**): [3], [5]\n- Commercial operations have expanded into European, Southeast Asian, and North American markets. (**Verified**): [3], [5]\n- Maintains recognized competitive advantages in technical maturity, cost control, and delivery assurance for high-volume client deployments. (**Verified**): [1]\n- Corporate R&D is centralized under the SKEQI Intelligent Manufacturing Advanced Technology Research Institute (IMATI), which prioritizes the integration of NDT, motion control, AI, 5G, robotics, and vision systems. (**Verified**): [1]\n\n## Differentiators\n- End-to-end manufacturing capability spanning the entire battery lifecycle from cell assembly to PACK assembly and end-of-life recycling. (**Verified**): [1], [3]\n- Fully integrated proprietary digital factory software (QIHANG MES/WMS) coupled with 5G connectivity for real-time production visualization and traceability. (**Verified**): [1]\n- In-house development strategy targeting core bottleneck technologies, specifically laser applications and industrial X-ray NDT, with goals to shorten core component lead times and enhance custom fabrication capabilities. (**Verified**): [1]\n- Recipient of multiple national and provincial recognitions, including National Specialized \"Little Giant\" Enterprise, National Service-Oriented Manufacturing Demonstration Enterprise, Fujian Manufacturing Single Champion, and the CATL \"Best Equipment Quality Response Award\". (**Verified**): [1], [3], [5]\n- Continuous hardware innovation demonstrated by recent patent grants, such as CN224662069U for a taped cell pre-stacking secondary positioning slide table that minimizes displacement during stacking. (**Verified**): [2]\n\n## Brand / Company Values\n- Core corporate values are explicitly defined as Integrity (诚信), Innovation (创新), Responsibility (责任), and Gratitude (感恩). (**Verified**): [1]\n- Strategic brand philosophy emphasizes forward-looking capacity layout, leveraging technological breakthroughs to drive energy industry transformation, and building a collaborative smart manufacturing ecosystem. (**Verified**): [1]\n\n## Recent Relevant Developments\n- December 9: Delivered a keynote presentation titled \"Energy Storage Manufacturing Energy Efficiency Improvement Path\" at the GGII Energy Storage Annual Conference. (**Verified**): [1]\n- November 20: Received the GGII Lithium Battery 15th Anniversary Special Award for \"15 Years of Technology Leap\". (**Verified**): [1]\n- August 2025: Granted utility model patent CN224662069U for a taped cell pre-stacking secondary positioning slide table, improving stacking placement precision. (**Verified**): [2]\n- Late 2025 to 2026: Conducted active nationwide campus recruitment drives (including Fuzhou University, Dalian Polytechnic University, and Dalian University of Technology) and expanded hiring pipelines for mechanical, electrical, algorithm, and management trainee roles. (**Verified**): [3], [5], [6]\n\n## Research Confidence / Gaps\n- **Confidence:** High confidence regarding product portfolio, core technologies, stated corporate values, location details, and named customer bases. Claims are consistently corroborated across the official website and independent university/job board postings.\n- **Gaps:** \n  - Precise annual revenue, profit margins, or order backlog figures are completely absent from the evidence.\n  - The official website contains dynamic placeholder artifacts (e.g., \"年+\", \"项+\", \"TOP\") due to script-based rendering, preventing verification of exact project counts, years of operation metrics, or market share percentages.\n  - Detailed information on formal strategic partners, distributors, or academic research consortia is not provided.\n  - Executive leadership structure beyond the legal representative (Fu Wenhui) is unavailable.\n  - Corporate structural nuances between the Ningde-operating entities and the Shanghai-registered corporation (上海思客琦智能装备科技股份有限公司) require direct filings to fully map ownership and operational hierarchies.",
+  "token_usage": {
+    "input": 4027,
+    "output": 7488,
+    "total": 11515
+  },
+  "latency_seconds": 45.9,
+  "status": 200,
+  "error": null
+}

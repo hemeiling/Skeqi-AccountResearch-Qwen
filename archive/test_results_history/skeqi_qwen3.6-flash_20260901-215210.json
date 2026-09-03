@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-09-01T21:52:10.629034-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "qwen3.6-flash",
+  "model_label": "Qwen 3.6 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "multimodal-generation",
+  "search_enabled": true,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "宁德思客琦招聘简章",
+      "url": "https://job.hdu.edu.cn/campus/view?id=3794",
+      "domain": "job.hdu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview\n- SKEQI is a high-tech enterprise specializing in the R&D, production, and sales of intelligent equipment. [1] **Verified**\n- The company provides comprehensive smart manufacturing solutions centered on new energy intelligent equipment. [1] **Verified**\n- Headquarters/Primary Address: No. 115 Shugang Road, Jiaocheng District, Ningde City, Fujian Province. [1] **Verified**\n- Operating across four major industrial manufacturing bases located in Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai. [3] **Verified**\n- Official documents do not disclose the parent group's founding year. A third-party university recruitment posting states the company was established in 2012. [3] **Likely / partially supported** (Tier 1 official site omits this data; a tier 5 industry database notes the specific subsidiary \"Ningde SKEQI Intelligent Equipment Co., Ltd.\" was registered in 2016. **Not enough evidence** to confirm group inception year.)\n- Reported workforce size is nearly 2,000 personnel. [3] **Likely / partialy supported** (Official employment portal categorizes the firm at 1,000–5,000 staff. **Likely / partially supported** due to reporting variance between sources.)\n\n## Main Products & Services\n- New energy intelligent equipment spanning cell assembly, module formation, PACK sealing, and battery recycling/disassembly processes. [1] **Verified**\n- QIHANG 5G Digital Factory System integrating pack workstations, WMS, MES, supply chain management, and big data visualization dashboards for full-process digital control. [1] **Verified**\n- KEPAILE Smart Logistics brand delivering intelligent conveyance, automated storage, and flexible material handling systems. [1] **Verified**\n- Laser Application Technology offering one-stop solutions focused on laser welding, laser energy control, and beam shaping for hardware and niche customizations. [1] **Verified**\n- Industrial Non-Destructive Testing (NDT) equipment providing high-end 2D/3D X-ray intelligent inspection systems. [1] **Verified**\n- Precision Manufacturing services encompassing mold fabrication, precision plastic/hardware processing, and battery component production. [1] **Verified**\n- Automotive & Component solutions supplying flexible, automated, and intelligent welding production lines for body, chassis, and white-body parts. [1] **Verified**\n\n## Industries / Markets Served\n- New energy lithium battery manufacturing. [1] **Verified**\n- Automotive industry and component suppliers. [1] **Verified**\n- Photovoltaic and energy storage manufacturing. [3] **Verified**\n- 3C electronics sector. [1] **Verified**\n- Aerospace and semiconductor industries (primarily served via NDT inspection solutions). [1] **Verified**\n- International commercial markets including Europe, Southeast Asia, and North America. [3] **Verified**\n\n## Customer Segments\n- Top-tier lithium battery manufacturers requiring module and PACK production line integration. [3] **Verified**\n- New energy vehicle (NEV) OEMs and automotive tier suppliers. [3] **Verified**\n- Photovoltaic and stationary energy storage developers/manufacturers. [3] **Verified**\n- Special vehicle enterprises transitioning to electric powertrains. [1] **Verified**\n- Industrial enterprises pursuing digital factory transformation and full-line automation upgrades. [1] **Verified**\n\n## Key Customers / Partners\n*(Sourced exclusively from evidence. First-party claims cited from official website [1]; Third-party claims cited from university/job board publications [3].)*\n- Battery & Energy Storage: CATL, EVE Energy, CALB, Gotion High-tech, Ruipuan Energy, Jinko Energy, Haichen. [1], [3] **Verified** (First-party & Third-party)\n- Automotive & NEV OEMs: XPeng, Leapmotor, Audi, BMW, Ford, Geely, SAIC. [1], [3] **Verified** (First-party & Third-party)\n- Special Vehicles: Linde, Hangcha. [1] **Verified** (First-party)\n\n## Competitive / Strategic Positioning\n- Achieved the #1 domestic market share in China for module and PACK production lines in 2023. [3] **Verified**\n- Executing aggressive capacity expansion via a 260,000 sqm Phase II smart manufacturing base in Ningde engineered for rapid capacity locking and efficient delivery. [1] **Verified**\n- Maintaining an active international commercial footprint expanding into European, Southeast Asian, and North American markets. [3] **Verified**\n- Directing R&D through the IMATI (Intelligent Manufacturing Advanced Technology Institute) to deeply integrate AI, non-destructive testing, motion control, 5G, robotics, and machine vision. [1] **Verified**\n- Documented operational advantages in technical maturity, cost control, and delivery assurance capabilities. [1] **Verified**\n\n## Differentiators\n- Full-lifecycle vertical integration: Uniquely covers the entire battery manufacturing sequence (cell to recycling) while maintaining in-house precision manufacturing and mold capabilities. [1] **Verified**\n- Integrated hardware-software交付: Combines physical production lines with proprietary 5G-powered MES/WMS/supply chain software, reducing multi-vendor integration friction. [1] **Verified**\n- Focus on subcomponent autonomy: Actively targets breakthroughs in \"chokehold\" laser technologies and high-precision X-ray NDT to shorten core component lead times. [1] **Verified**\n- Extensive national/provincial certification portfolio: Holds designations including National Specialized & Sophisticated \"Little Giant\" Enterprise, National Service-oriented Manufacturing Demonstration Enterprise, and Fujian Provincial Manufacturing Single Champion. [3] **Verified**\n\n## Brand / Company Values\n- Core corporate values explicitly stated on the official domain: Integrity (诚信), Innovation (创新), Responsibility (责任), and Gratitude (感恩). [1] **Verified**\n- Strategic ethos emphasizes forward-looking capacity planning, ecosystem collaboration in energy equipment manufacturing, and using technological breakthroughs to drive industry transformation. [1] **Verified**\n\n## Recent Relevant Developments\n- Granted utility model patent CN224662069U for a \"secondary positioning slide table for pre-stacked taped cells\" to prevent misalignment during stacking operations. [2] **Verified**\n- Delivered keynote presentation titled \"Energy Storage Manufacturing Energy Efficiency Improvement Path\" at the GAOGONG Storage Annual Conference (Dec 9). [1] **Verified**\n- Received the GAOGONG Lithium Battery 15th Anniversary Special Award recognizing \"15 Years of Technological Leap.\" [1] **Verified**\n- Honored with the CATL \"Best Equipment Quality Response Award.\" [1] **Verified**\n- Initiated 2026 campus recruitment cycle targeting mechanical, process, electrical, machine vision, and algorithm engineering positions. [6] **Verified**\n\n## Research Confidence / Gaps\n- Founding Year Conflict: The official website [1] does not list a founding date. A tier 6 university job board cites 2012, while a tier 5 industry database confirms the Ningde subsidiary was registered in 2016. **Not enough evidence** to verify the parent entity's original establishment date.\n- Headcount Variance: University postings state ~2,000 employees [3], whereas official campus recruitment portals classify the enterprise at 1,000–5,000 staff [5]. **Likely / partially supported** due to dynamic hiring cycles and differing classification methodologies.\n- Financial Metrics: Revenue figures, profit margins, order backlog, and capitalization data are entirely absent from all provided sources. **Not enough evidence**.\n- Partnership Depth: While key client names are disclosed, details regarding exclusivity clauses, joint venture structures, or long-term strategic agreement terms are undisclosed. **Not enough evidence**.\n- Source Priority Applied: Official website disclosures [1] were prioritized over third-party university/job board announcements [3], [6] and industry databases [2] where overlapping claims appeared. Static data discrepancies were noted rather than reconciled per ranking rules.",
+  "token_usage": {
+    "input": 3787,
+    "output": 7067,
+    "total": 10854
+  },
+  "latency_seconds": 50.9,
+  "status": 200,
+  "error": null
+}

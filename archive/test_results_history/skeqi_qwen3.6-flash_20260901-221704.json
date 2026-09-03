@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-09-01T22:17:04.104059-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "qwen3.6-flash",
+  "model_label": "Qwen 3.6 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "multimodal-generation",
+  "search_enabled": true,
+  "evidence_cached": false,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 4,
+      "title": "【宣讲会】宁德思客琦智能装备有限公司",
+      "url": "https://che.fzu.edu.cn/info/1059/9136.htm",
+      "domain": "che.fzu.edu.cn",
+      "tier": 6,
+      "source_type": "other-web-source",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 5,
+      "title": "宁德思客琦招聘简章",
+      "url": "https://job.hdu.edu.cn/campus/view?id=3794",
+      "domain": "job.hdu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 6,
+      "title": "宁德思客琦智能装备有限公司",
+      "url": "https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+      "domain": "jygl.dep.dlpu.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview / 公司概况\n**English:**\nSKEQI思客琦 is a high-tech enterprise dedicated to the R&D, production, and sales of intelligent equipment. **Verified** [1][3][4] Its primary legal entity, 宁德思客琦智能装备有限公司, carries a registered capital of 100 million RMB. **Verified** [2] The company operates four major manufacturing facilities located in Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai. **Verified** [3][4] Headquartered in Ningde, Fujian, it employs approximately 2,000 staff members. **Verified** [3][4][6] Independent recruitment platforms report that the firm held the top domestic market share for module and PACK production lines in 2023. **Likely / partially supported** [3][4] Commercial operations have expanded into European, Southeast Asian, and North American markets. **Verified** [3][4]\n\n**中文：**\nSKEQI思客琦是一家专业从事智能装备研发、生产和销售的高新技术企业。 **Verified** [1][3][4] 其主要法人实体宁德思客琦智能装备有限公司的注册资本为1亿元人民币。 **Verified** [2] 公司在宁德蕉城、宁德东侨、上海松江和大连北海设有四大核心制造基地。 **Verified** [3][4] 公司总部位于福建宁德，员工规模约2000人。 **Verified** [3][4][6] 独立招聘平台数据显示，该公司2023年模组及PACK生产线国内市场占有率位居第一。 **Likely / partially supported** [3][4] 商业版图已扩展至欧洲、东南亚及北美市场。 **Verified** [3][4]\n\n## Core Business / 核心业务\n**English:**\nThe company specializes in the new energy intelligent equipment sector, delivering integrated smart manufacturing solutions anchored by proprietary machinery. **Verified** [1][3] Operational capabilities encompass complete battery manufacturing workflows, including cell assembly, module formation, PACK encapsulation, and battery recycling/dismantling. **Verified** [1][3][4] Furthermore, the firm supplies flexible, automated, and intelligent production lines tailored for automotive component suppliers and OEMs. **Verified** [1]\n\n**中文：**\n公司深耕新能源智能装备领域，提供以自有装备为核心的智能制造整体解决方案。 **Verified** [1][3] 业务能力覆盖完整电池制造流程，包含电芯装配、模组成型、PACK封装及电池回收拆解。 **Verified** [1][3][4] 此外，公司为汽车零部件供应商及主机厂定制柔性化、自动化与智能化的生产线。 **Verified** [1]\n\n## Products & Services / 产品与服务\n**English:**\nFlagship offerings include the QIHANG Digital Factory System (琦航数字工厂系统), an integrated industrial management platform combining pack line stations, WMS, MES, supply chain management, and 5G-driven visual dashboards. **Verified** [1] The KEPILE Intelligent Logistics (科派乐智能物流) division provides automated conveying, handling, and warehousing systems. **Verified** [1] Laser Application Technology (激光应用技术) delivers one-stop solutions centering on laser welding, energy control, and beam shaping. **Verified** [1] Industrial Non-Destructive Testing (工业无损检测) utilizes proprietary 2D/3D X-ray systems for inspecting batteries, semiconductors, and aerospace parts. **Verified** [1] Precision Manufacturing (精密智造) handles R&D and fabrication of industrial components, molds, plastics, and hardware accessories. **Verified** [1] The organization possesses over 240 patents, including a newly granted utility model for a taped-cell pre-stacking positioning slide table to minimize alignment deviation. **Verified** [2]\n\n**中文：**\n核心产品包括琦航数字工厂系统（QIHANG DIGITAL FACTORY SYSTEM），该系统集成pack线工位、WMS、MES、供应链管理及5G驱动可视看板。 **Verified** [1] 科派乐智能物流（INTELLIGENT LOGISTICS）事业部提供自动化输送、搬运与仓储系统。 **Verified** [1] 激光应用技术（LASER APPLICATION TECHNOLOGY）提供聚焦激光焊接、能量控制与整形技术的一站式方案。 **Verified** [1] 工业无损检测（INDUSTRIAL NON-DESTRUCTIVE TESTING）采用自主2D/3D X射线系统用于电池、半导体及航天部件检测。 **Verified** [1] 精密智造（PRECISION INTELLIGENT MANUFACTURING）负责工业零部件、模具、塑胶及五金配件的研发与制造。 **Verified** [1] 公司拥有超240项专利，其中一项新获授权的贴胶电芯预堆叠定位滑台实用新型专利旨在降低堆叠偏移率。 **Verified** [2]\n\n## Industries Served / 服务行业\n**English:**\nPrimary verticals include the new energy battery and stationary storage sectors. **Verified** [1][3] The automotive industry, serving both EV startups and legacy OEMs. **Verified** [1][3] Photovoltaic and solar manufacturing. **Verified** [3][4] 3C electronics and consumer device production. **Verified** [1] Aerospace engineering applications. **Verified** [1] Broad industrial engineering and heavy machinery manufacturing. **Verified** [1]\n\n**中文：**\n主要服务垂直领域包括新能源电池及固定式储能行业。 **Verified** [1][3] 汽车行业，服务造车新势力与传统主机厂。 **Verified** [1][3] 光伏与太阳能制造。 **Verified** [3][4] 3C电子与消费设备制造。 **Verified** [1] 航空航天工程应用。 **Verified** [1] 通用工业工程及重型机械制造。 **Verified** [1]\n\n## Customer Segments / 客户类型\n**English:**\nClients range from globally scaled lithium-ion battery manufacturers requiring high-volume tooling. **Verified** [1][3][4] Tier-1 and emerging automotive brands seeking production automation. **Verified** [1][3][4] Large-capacity photovoltaic and energy storage developers. **Verified** [3][4] Manufacturers of industrial and specialty vehicles undergoing electrification upgrades. **Verified** [1] Semiconductor wafer and precision part fabricators. **Verified** [1]\n\n**中文：**\n客户群涵盖需大批量产线设备的全球性锂离子电池制造商。 **Verified** [1][3][4] 寻求生产自动化的整车一级供应商及新兴汽车品牌。 **Verified** [1][3][4] 大型光伏与储能项目开发商。 **Verified** [3][4] 正在推进电动化升级的工业与特种车辆制造商。 **Verified** [1] 半导体晶圆与精密零件加工厂。 **Verified** [1]\n\n## Customers & Partners / 客户与合作伙伴\n**English:**\nDocumented major clients include battery makers CATL (宁德时代), CALB (中创新航), EVE Energy (亿纬锂能), Gotion (国轩高科), and Riipuo Energy (瑞浦能源) **[First-party verified]** [1][2]; automotive brands Audi (奥迪), BMW (宝马), Ford (福特), Geely (吉利), SAIC (上汽), XPeng (小鹏), and Leapmotor (零跑) **[First-party verified]** [1][3]; PV/storage entities Jinko Solar (晶科能源) and Hithium (海辰储能) **[First-party verified]** [3][4]; and industrial vehicle firms Linde (林德) and Hangcha (杭叉) **[First-party verified]** [1]. The company explicitly acknowledges receiving the \"Best Equipment Quality Response Award\" (**最佳设备质量响应奖**) from CATL **[First-party verified]** [1]. No specific technology distributors, joint-venture partners, or channel allies are disclosed in the available materials. **Not enough evidence** [1]\n\n**中文：**\n文档记录的主要客户包括电池厂商宁德时代、中创新航、亿纬锂能、国轩高科及瑞浦能源 **[第一方核实]** [1][2]；汽车品牌奥迪、宝马、福特、吉利、上汽、小鹏及零跑 **[第一方核实]** [1][3]；光储企业晶科能源及海辰储能 **[第一方核实]** [3][4]；以及工业车辆企业林德和杭叉 **[第一方核实]** [1]。公司明确记载荣获宁德时代「最佳设备质量响应奖」 **[第一方核实]** [1]。现有材料中未披露任何具体的技术分销商、合资伙伴或渠道联盟。 **证据不足** [1]\n\n## Differentiators / 差异化优势\n**English:**\nSKEQI思客琦 emphasizes technological maturity, stringent cost-control methodologies, and reliable delivery execution as foundational strengths. **Verified** [1] A 260,000-square-meter Phase II smart manufacturing base in Ningde is incrementally operationalizing to secure advance capacity allocation and accelerate fulfillment cycles. **Verified** [1] Differentiation is reinforced by the IMATI research institute's convergence of non-destructive testing, motion control, AI algorithms, and 5G vision integration. **Verified** [1] An extensive proprietary patent portfolio, particularly in cell pre-stacking mechanics, guarantees superior placement precision and minimizes material displacement. **Verified** [2]\n\n**中文：**\nSKEQI思客琦以技术成熟度、严格的成本控制方法及可靠的交付执行为基础优势。 **Verified** [1] 位于宁德的26万平方米二期智造基地正逐步投产，旨在提前锁定产能分配并缩短交付周期。 **Verified** [1] 差异化优势由IMATI先进制造研究院推动，实现无损检测、运动控制、AI算法与5G视觉的深度集成。 **Verified** [1] 广泛的自主专利组合（尤其集中在电芯预堆叠机械结构）保障了卓越的放置精度并最大限度减少物料位移。 **Verified** [2]\n\n## Brand Values / 品牌价值观\n**English:**\nCorporate identity is formally defined by four guiding pillars: Integrity (诚信), Innovation (创新), Responsibility (责任), and Gratitude (感恩). **Verified** [1] Strategic messaging consistently promotes harnessing engineering breakthroughs to modernize the energy sector and co-establishing an intelligent equipment manufacturing ecosystem. **Likely / partially supported** [1]\n\n**中文：**\n企业身份正式由四大指引支柱定义：诚信、创新、责任与感恩。 **Verified** [1] 战略传播始终强调利用工程突破现代化能源产业，并协同共建智能装备智造生态圈。 **Likely / partially supported** [1]\n\n## Recent Developments / 近期动态\n**English:**\nOn November 20, the organization was honored with the \"15-Year Technological Leap\" (**十五年技术跃迁**) special accolade from Gaogong Li-ion Battery for its fifteenth milestone. **Verified** [1][3][4] By early December, senior representatives delivered keynote addresses on optimizing energy-consumption pathways in storage manufacturing at industry summits. **Verified** [1] Logistically, the Ningde Phase II facility is transitioning into full commissioning to preemptively stabilize high-yield output. **Verified** [1] In parallel, regulatory authorities issued Authorization No. CN224662069U for a patented taped-cell stacking positioning mechanism, enhancing assembly tolerance standards. **Verified** [2]\n\n**中文：**\n11月20日，公司在高工锂电十五周年之际荣获“十五年技术跃迁”特别荣誉。 **Verified** [1][3][4] 12月初，高层代表在行业峰会上发表了关于优化储能制造能耗路径的主题报告。 **Verified** [1] 物流布局方面，宁德二期设施正转入全面调试阶段，以抢先稳定高产出产能。 **Verified** [1] 同期，监管部门颁发了专利授权号CN224662069U，针对一种贴胶电芯堆叠定位机制，提升了组装公差标准。 **Verified** [2]\n\n## Research Gaps / 信息缺口\n**English:**\nThe official domain does not disclose the exact establishment year, while external university career portals cite 2012. **Not enough evidence** [1][4] Complete financial statements, including gross margins, EBITDA, and capitalization tables, are entirely absent across all references. **Not enough evidence** [1] Granular performance metrics (such as cycle speed, micron-level tolerances, or kW ratings) for laser, logistics, and NDT product families remain unpublished. **Not enough evidence** [1] The executive succession plan, board composition, and internal organizational hierarchy are unspecified. **Not enough evidence** [1] Additionally, the precise terms of academic collaborations tied to the IMATI institute lack public documentation. **Not enough evidence** [3]\n\n**中文：**\n官方网站未披露确切成立年份，而外部高校就业网引用的是2012年。 **证据不足** [1][4] 所有参考资料中均完全缺失完整的财务报表，包括毛利率、EBITDA及资本结构表。 **证据不足** [1] 激光、物流及无损检测产品族的细分性能指标（如节拍速度、微米级公差或千瓦额定值）仍未发布。 **证据不足** [1] 高管继任计划、董事会构成及内部组织架构层级均无具体说明。 **证据不足** [1] 此外，与IMATI研究院挂钩的学术合作具体条款缺乏公开文献支持。 **证据不足** [3]\n\n## Sources / 信息来源\n[1] https://www.skeqi.com\n[2] https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml\n[3] https://pjcareer.dlut.edu.cn/info/1051/35062.htm\n[4] https://che.fzu.edu.cn/info/1059/9136.htm\n[5] https://job.hdu.edu.cn/campus/view?id=3794\n[6] https://jygl.dep.dlpu.edu.cn/company/view/id/915039",
+  "token_usage": {
+    "input": 3960,
+    "output": 10401,
+    "total": 14361
+  },
+  "latency_seconds": 70.0,
+  "retrieval_timings": {
+    "official_site": 3.0,
+    "query_generation": 0.0,
+    "web_retrieval": 5.9,
+    "source_processing": 0.0,
+    "evidence_build": 97.8,
+    "retrieval_total": 106.7
+  },
+  "status": 200,
+  "error": null
+}

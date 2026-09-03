@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-09-01T22:12:40.830625-05:00",
+  "company": "SKEQI",
+  "website": "https://www.skeqi.com",
+  "model": "qwen3.6-flash",
+  "model_label": "Qwen 3.6 Flash",
+  "protocol": "DashScope Native",
+  "endpoint": "multimodal-generation",
+  "search_enabled": true,
+  "evidence_cached": false,
+  "search_queries": [
+    "SKEQI 思客琦 company products",
+    "SKEQI 思客琦 公司简介 产品",
+    "SKEQI 思客琦 customers partners 客户 合作伙伴",
+    "site:skeqi.com 思客琦 产品",
+    "SKEQI 思客琦 战略合作 partnership"
+  ],
+  "sources": [
+    {
+      "id": 1,
+      "title": "(official website)",
+      "url": "https://www.skeqi.com",
+      "domain": "www.skeqi.com",
+      "tier": 1,
+      "source_type": "official-website",
+      "official": true,
+      "retrieval_method": "cached-official"
+    },
+    {
+      "id": 2,
+      "title": "宁德思客琦取得贴胶电芯预堆叠二次定位滑台专利,能够保证贴胶电芯堆叠后不易偏移",
+      "url": "https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml",
+      "domain": "m.jrj.com.cn",
+      "tier": 5,
+      "source_type": "industry-publication",
+      "official": false,
+      "retrieval_method": "standard"
+    },
+    {
+      "id": 3,
+      "title": "宁德思客琦2026校园招聘简章",
+      "url": "https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+      "domain": "pjcareer.dlut.edu.cn",
+      "tier": 6,
+      "source_type": "job-board",
+      "official": false,
+      "retrieval_method": "standard"
+    }
+  ],
+  "research_result": "## Company Overview / 公司概况\n**English:**\nSKEQI思客琦 is a high-tech enterprise specializing in the research, development, production, and sales of intelligent equipment [1][3] (**Verified**). Established in 2016 [3] (**Verified**), the company operates four major manufacturing campuses located in Ningde Jiaocheng, Ningde Dongqiao, Shanghai Songjiang, and Dalian Beihai [3] (**Verified**). Its Ningde Phase II smart manufacturing facility covers an area of 260,000 square meters and is progressively ramping up operations to enhance rapid capacity response [1][3] (**Verified**).\n**中文：**\n思客琦是一家专业从事智能装备研发、生产和销售的高新技术企业[1][3](**Verified**)。公司成立于2016年[3](**Verified**)，目前在宁德蕉城、宁德东侨、上海松江及大连北海设有四大产业制造基地[3](**Verified**)。其宁德二期智造基地面积达26万平方米，正处于逐步投产阶段以强化产能的快速响应能力[1][3](**Verified**)。\n\n## Core Business / 核心业务\n**English:**\nThe company is deeply rooted in the new energy intelligent equipment sector, delivering integrated equipment, production lines, and turnkey solutions spanning the entire battery manufacturing workflow, including cell assembly, module formation, PACK encapsulation, and battery recycling/disassembly [1] (**Verified**). Beyond core electromechanical manufacturing, its commercial scope extends into industrial digitalization software and services [1] (**Likely / partially supported**), specifically encompassing proprietary logistics automation, laser application engineering, industrial non-destructive testing (NDT), and precision intelligent manufacturing verticals [1] (**Verified**).\n**中文：**\n公司深度扎根于新能源智能装备领域，提供涵盖电芯装配、模组成型、PACK封装及电池回收拆解等电池制造全流程的设备、产线与整体解决方案[1](**Verified**)。除核心机电装备外，其业务版图向工业数字化软件与服务延伸[1](**Likely / partially supported**)，具体整合了自主知识产权的智能物流自动化、激光应用工程、工业无损检测(NDT)及精密智造等平行赛道[1](**Verified**)。\n\n## Products & Services / 产品与服务\n**English:**\nFlagship offerings feature the QIHANG 5G Digital Factory System, which leverages 5G connectivity to fuse pack workstation controls, side-line inventory, WMS, MES, and supply chain management into a centralized digital dashboard [1] (**Verified**). The SKP乐 (Kepeile) Intelligent Logistics division provides automated conveying, warehousing, and handling architectures optimized for new energy and 3C electronics [1] (**Verified**). Laser solutions concentrate on welding, energy modulation, and optical beam shaping technologies [1] (**Verified**). Industrial NDT instruments deploy high-end 2D/3D X-ray inspection platforms for defect localization in batteries, semiconductor joints, and aerospace components [1] (**Verified**). Automotive divisions furnish flexible, automated welding production lines tailored for body-in-white and chassis assemblies [1] (**Verified**). Proprietary hardware innovation includes a patented secondary positioning slide mechanism for taped-cell pre-stacking that physically mitigates alignment drift [2] (**Verified**).\n**中文：**\n核心产品矩阵包含琦航5G数字工厂系统，该平台依托5G通讯将pack线工位控制、线边库存、WMS仓储管理、MES生产执行及供应链管理系统熔接于统一的大数据可视化看板中[1](**Verified**)。科派乐智能物流事业部面向新能源与3C电子行业架构自动化输送、立体仓储及物料搬运系统[1](**Verified**)。激光应用方案聚焦焊接工艺、能量调制与光束整形技术[1](**Verified**)。工业无损检测仪器搭载高端2D/3D X射线智能检测平台，专用于电池极片、半导体焊点及航空航天零部件的缺陷精准定位[1](**Verified**)。汽车装备板块交付适用于白车身与底盘总成的柔性化、自动化焊接生产线[1](**Verified**)。硬件创新端已取得贴胶电芯预堆叠二次定位滑台专利，通过物理结构抑制堆叠过程中的位置漂移[2](**Verified**)。\n\n## Industries Served / 服务行业\n**English:**\nPrimary industrial touchpoints comprise new energy manufacturing, automotive production, and 3C electronics assembly [1] (**Verified**). NDT capabilities penetrate the aerospace certification landscape [1] (**Verified**), while smart logistics infrastructures actively facilitate electrification transitions for special-purpose vehicle fleets [1][3] (**Verified**). The industrial footprint explicitly extends into stationary power storage and photovoltaic cell manufacturing ecosystems [3] (**Verified**).\n**中文：**\n核心服务行业矩阵涵盖新能源制造、汽车整车生产及3C消费电子组装[1](**Verified**)。无损检测技术穿透航空航天工业认证标准[1](**Verified**)，智能物流基础设施直接赋能特种车辆车队的电动化改造[1][3](**Verified**)。工业应用版图明确延伸至固定式储能与光伏电池片制造生态圈[3](**Verified**)。\n\n## Customer Segments / 客户类型\n**English:**\nClient portfolios are stratified into tier-one lithium-ion battery fabricators, premier new energy vehicle (NEV) brands, and dominant photovoltaic/energy storage conglomerates [3] (**Verified**). Segment definitions further incorporate global and domestic mainstream automotive OEMs alongside heavy-duty special vehicle operators [1] (**Verified**). Geographic segmentation spans domestic markets with proven commercial penetration into Europe, Southeast Asia, and North America [3] (**Verified**). (Note: Revenue attribution ratios by client segment are **Not enough evidence**) [3].\n**中文：**\n客户资产层级划分为Tier-1锂离子电池制造商、头部新兴新能源汽车品牌以及主导性光伏/储能集团[3](**Verified**)。客户分类进一步涵盖国内外主流汽车整车厂(OEM)及重型特种车辆运营商[1](**Verified**)。地域分割以国内市场为基盘，并已在欧洲、东南亚及北美市场完成实质性商业渗透[3](**Verified**)。（注：按客户类型的营收贡献比例目前**证据不足**）**[3]**。\n\n## Customers & Partners / 客户与合作伙伴\n**English:**\nDirect client enumerations published on the corporate portal list CATL, EVE Energy, CALB, Gotion High-Tech, XPeng, and Leapmotor as anchor accounts [1] (**First-party / Verified**). Supplementary recruitment archives corroborate strategic alignments with Audi, BMW, Ford, Geely, SAIC, JinkoSolar, and Haiti [3] (**Third-party / Verified**). Operational alliance partners include Linde and Hangcha for targeted electrification retrofit programs [1] (**First-party / Verified**). Performance validation is marked by the receipt of CATL's \"Best Equipment Quality Response Award\", authenticated through internal corporate communications [1] (**First-party / Verified**).\n**中文：**\n官网公示的直接客户名录将宁德时代、亿纬锂能、中创新航、国轩高科、小鹏汽车与零跑汽车列为核心标杆客户[1](**第一方/Verified**)。第三方校招档案文件印证了公司与奥迪、宝马、福特、吉利、上汽集团、晶科能源及海辰动力的战略合作关系[3](**第三方/Verified**)。业务联动合作伙伴涵盖林德与杭叉，专攻定向电动化技改项目[1](**第一方/Verified**)。业绩背书体现为荣获宁德时代「最佳设备质量响应奖」，该荣誉经由企业内刊渠道核证[1](**第一方/Verified**)。\n\n## Differentiators / 差异化优势\n**English:**\nCompetitive moats are built upon high technology maturity, stringent cost containment protocols, and superior delivery assurance track records [1] (**Verified**). The firm commands the **#1 domestic market share** position within the modular and PACK production line category [3] (**Verified**). Technical differentiation is institutionalized via the intelligent manufacturing advanced technology research institute (IMATI), which architecturally merges core processing craft logic with AI optimization and 5G deployment meshes [1] (**Verified**). Physical scale leverage is demonstrated by the operational inauguration of the 260,000 sqm Ningde Phase II plant [1][3] (**Verified**). Engineering precision is contractually backed by self-developed patents, notably the dual-positioning anti-shift slide architecture [2] (**Verified**). (Note: Quantitative market share percentage value remains **Not enough evidence**) [3].\n**中文：**\n竞争壁垒构筑于极高的技术成熟度、严苛的成本管控规程及卓越的交付保障履历之上[1](**Verified**)。公司在模组及PACK生产线品类中占据国内市场占有率第一的席位[3](**Verified**)。技术差异化由下设的智能制造先进技术研究院（IMATI）制度化驱动，该院将核心工艺逻辑与AI优化算法及5G组网框架进行底层融合[1](**Verified**)。规模杠杆效应体现于26万㎡宁德二期厂房的正式启用[1][3](**Verified**)。工程精度受控于自主研发专利，尤以双定位防偏移滑台架构为代表[2](**Verified**)。（注：具体市场份额百分比数值目前**证据不足**）**[3]**。\n\n## Brand Values / 品牌价值观\n**English:**\nFoundational corporate tenets are formally codified as Integrity, Innovation, Responsibility, and Gratitude [1] (**Verified**). Strategic messaging reinforces an operating philosophy centered on forward-looking capacity reservation, paradigm-shifting technological interventions in the energy sector, ecosystem symbiosis for intelligent machinery manufacturing, and unwavering dedication to quality-led collaborative progress [1] (**Verified**).\n**中文：**\n企业核心信条被正式凝练为“诚信、创新、责任、感恩”[1](**Verified**)。战略宣导强化了以“前瞻性产能预留、能源赛道技术范式干预、智能装备制造生态共生、坚守质量引领协同进步”为轴心的运营哲学[1](**Verified**)。\n\n## Recent Developments / 近期动态\n**English:**\nPhysical expansion accelerates with the progressive commissioning of the 260,000 sqm Ningde Phase II manufacturing hub [1] (**Verified**). Industry acknowledgment peaked in late 2025 upon receiving the “Fifteen Years of Technological Leap” special commendation at the GA Lithium 15th-anniversary summit on November 20 [1] (**Verified**). Knowledge dissemination continued on December 9 when executive leadership presented technical roadmaps on energy efficiency pathways at the GA Energy Storage Annual Conference [1] (**Verified**). IP milestones were logged in September 2025 with the official patent grant for the taped-cell pre-stacking positioning slide system [2] (**Verified**). Commercial momentum is evident through the nationwide rollout of the 2026 Campus Recruitment initiative targeting multidisciplinary engineering talent [3] (**Verified**). Compliance stature advanced with formal recognitions as a National “Little Giant” enterprise, National Service-type Manufacturing Demonstration Enterprise, and Provincial Manufacturing Single Champion [3] (**Verified**). (Note: Granular phasing schedules for new base construction are **Not enough evidence**) [1].\n**中文：**\n实体扩张加速推进，26万㎡的宁德二期智造枢纽正分批进入调试投产阶段[1](**Verified**)。行业认可度于2025年末达到峰值，公司于11月20日高工锂电十五周年峰会上摘得“十五年技术跃迁”特别荣誉[1](**Verified**)。知识输出延续至12月9日，管理层团队在高工储能年会上发布储能能效提升技术路线图[1](**Verified**)。知识产权里程碑标注于2025年9月，贴胶电芯预堆叠定位滑台系统正式获批专利授权[2](**Verified**)。商业动能体现于面向全国多点铺开2026届校园招聘计划，广纳跨学科工程人才[3](**Verified**)。合规地位显著提升，接连获颁国家专精特新“小巨人”企业、国家服务型制造示范企业及福建省制造业单项冠军认定[3](**Verified**)。（注：新基地建设的精细化分期进度表目前**证据不足**）**[1]**。\n\n## Research Gaps / 信息缺口\n**English:**\nCritical quantitative voids persist due to placeholder redactions in official hiring materials: precise historical founding parameters, aggregate workforce headcounts, absolute market share coefficients, and dedicated R&D fiscal allocations are categorically **Not enough evidence** [3]. Detailed operational specifications (e.g., cycle time metrics, yield rate baselines), unit economic models, pricing matrices, and granular geographical revenue splits for cross-border territories lack adequate disclosure [1][3].\n**中文：**\n因官方人力资源文件存在数据占位符，核心量化指标存在显著断层：确切的创立历史参数、在职员工总人数、绝对市场份额系数以及专项研发投入资金池均属于**证据不足**范畴[3]。详尽的运营规格（如节拍时间指标、良率基准线）、单体经济模型、价格矩阵以及跨境业务的细粒度地域营收拆分缺乏充分的公开披露[1][3]。\n\n## Sources / 信息来源\n[1] https://www.skeqi.com\n[2] https://m.jrj.com.cn/madapter/finance/2026/08/21140158200434.shtml\n[3] https://pjcareer.dlut.edu.cn/info/1051/35062.htm",
+  "token_usage": {
+    "input": 2724,
+    "output": 10130,
+    "total": 12854
+  },
+  "latency_seconds": 73.3,
+  "retrieval_timings": {
+    "official_site": 3.2,
+    "query_generation": 0.0,
+    "web_retrieval": 7.8,
+    "source_processing": 0.0,
+    "evidence_build": 10.2,
+    "retrieval_total": 21.2
+  },
+  "status": 200,
+  "error": null
+}
