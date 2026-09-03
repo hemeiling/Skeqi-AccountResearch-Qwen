@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-02
 > Updated by: Claude
-> Current phase: CRM integration COMPLETE and pre-push verified; awaiting model activation for live research
+> Current phase: Deployment PREPARED and pre-flight verified; deploy itself needs your Render account
 > Overall status: DEGRADED — DashScope account has no model entitlement (403 AccessDenied)
 
 ---
@@ -337,6 +337,44 @@ navigation, no System Status header.
 
 Files: `public/qwen-research.js` (new, 633 lines), `public/index.html`,
 `public/app.js`, `server.js`, `qwenResearch.js`.
+
+---
+
+### Render deployment — prepared, NOT deployed
+
+**I cannot perform the deployment.** There is no Render API key, no `render`
+CLI and no dashboard session available here, so creating services and entering
+secrets is yours to do. Everything that can be prepared and proven in advance
+has been.
+
+**Blocker resolved:** the engine was not in a git repository and Render deploys
+from one. It is now initialised and committed locally (`ai_credentials.env`,
+`reports/`, `evidence_cache/`, `test_results/` all ignored). **It still needs a
+GitHub remote and a push** — that requires your account.
+
+**Pre-flight verified by simulating Render exactly** — credentials file moved
+away, configuration from environment variables only, `gunicorn --workers 1
+--threads 8`:
+
+| Check | Result |
+|---|---|
+| Boots with no `ai_credentials.env` | ✓ config source = environment |
+| `/healthz` | ✓ 200 |
+| Anonymous app page | ✓ 302 → login |
+| Anonymous API | ✓ 401 |
+| Service-key call | ✓ 200 |
+| `frame-ancestors` | ✓ set to the approved origin, no wildcard |
+| Language views from a posted record | ✓ 19 sections in en / zh / bilingual |
+| `/api/render`, `/api/render-portfolio`, `/api/render-zip` | ✓ 30.8 KB / 29.2 KB / 22.0 KB |
+
+**Blueprint gap found and fixed:** `APP_SERVICE_KEY` was missing from the
+engine's `render.yaml`, so a blueprint deploy would have started the engine with
+no server-to-server credential and rejected every CRM call.
+`ACCOUNT_RESEARCH_TIMEOUT_MS` was likewise missing from the CRM's. Both
+blueprints now declare every variable their code reads.
+
+`verify_deployment.sh <engine-url> <crm-url>` runs the full post-deploy
+validation read-only, with no model call.
 
 ---
 
