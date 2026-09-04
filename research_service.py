@@ -139,8 +139,19 @@ ALL_MODELS = list(MODEL_LABELS)
 
 # Known name collisions. Generic identity matching already rejects most unrelated
 # results; this is an explicit backstop for collisions we have actually observed.
+# Known same-name companies, keyed by the target's lowercase name. A page whose
+# text carries one of these phrases is about the OTHER company, so it is rejected
+# outright and never re-opened by Tier B.
+#
+# Deliberately narrow and auditable: each entry names the other entity, never a
+# bare place or industry word. "ACRO Automation Systems" (Wisconsin, assembly
+# automation) collides with "ACRO 苏州", a GMP pharma-plant operator; the phrase
+# must tie ACRO to that entity, so "苏州" alone is NOT listed — plenty of
+# legitimate coverage mentions Suzhou.
 COLLISIONS = {
     "skeqi": ["skechers", "斯凯奇", "运动鞋", "sneaker", "footwear", "shoes"],
+    "acro automation systems": ["acro苏州", "acro 苏州", "acro suzhou",
+                                "苏州爱克罗", "acro生物", "acrobiosystems"],
 }
 
 # Financial-source ladder, in the order the account-research brief requires:
@@ -924,12 +935,75 @@ def classify(url, domain):
     return 6, "other-web-source"
 
 
+# Words that are never distinctive on their own: a title containing only one of
+# these tells us nothing about which company it concerns.
+COMMON_TOKENS = {
+    "auto", "motor", "motors", "energy", "battery", "batteries", "power", "systems",
+    "system", "automation", "engineering", "electric", "electronics", "industries",
+    "industrial", "manufacturing", "machine", "machinery", "equipment", "materials",
+    "digital", "data", "smart", "advanced", "precision", "products", "service",
+    "services", "global", "national", "international", "european", "american",
+    "china", "chinese", "germany", "german", "france", "french", "japan", "korea",
+    "new", "next", "first", "one", "pro", "plus", "max", "core", "prime", "united",
+    "general", "standard", "central", "modern", "future", "green", "clean", "eco",
+    "cell", "cells", "pack", "module", "storage", "mobility", "vehicle", "vehicles",
+}
+
+
+def _mentions(needle, text):
+    """Is `needle` present as a standalone word?
+
+    NOT \\b: Python puts word boundaries between \\w and \\W, and CJK characters
+    are \\w, so "创企Verkor融资" has no boundary around the Latin name and \\b
+    misses it. A third of this corpus is Chinese-language coverage, so that
+    silently discarded exactly the third-party reporting we want. ASCII-only
+    edges keep "myverkorpage" out while letting CJK context in.
+    """
+    if not needle:
+        return False
+    return bool(re.search(r"(?<![A-Za-z0-9])" + re.escape(needle) + r"(?![A-Za-z0-9])",
+                          text or "", re.I))
+
+
+def core_name(name):
+    """The company name with legal suffixes removed.
+
+    "Manz AG" -> "Manz". Matching the full legal form verbatim is why a headline
+    reading "Manz announces..." was rejected as unrelated: the suffix the press
+    never uses was required to be present.
+    """
+    n = (name or "").strip()
+    prev = None
+    while n and n != prev:
+        prev = n
+        n = re.sub(r"[,\s]+(?:{})\.?$".format("|".join([
+            "ag", "gmbh", "inc", "incorporated", "llc", "l\.l\.c", "ltd", "limited",
+            "corp", "corporation", "co", "company", "s\.a", "sa", "sas", "plc",
+            "bv", "b\.v", "nv", "n\.v", "srl", "s\.r\.l", "spa", "s\.p\.a",
+            "pte", "kk", "k\.k", "oy", "ab", "as", "a\.s", "aps", "holding",
+            "holdings", "group",
+        ])), "", n, flags=re.I).strip()
+    return n or (name or "").strip()
+
+
+def distinctive_tokens(name):
+    """Tokens that actually identify THIS company, strongest first."""
+    toks = _name_tokens(core_name(name))
+    return [t for t in toks if t not in COMMON_TOKENS]
+
+
 def identity_ok(hay, name, name_cn, domain, url):
     """Does this result plausibly concern the target company?
 
-    The first version demanded the FULL name verbatim, which discarded 74 of 96
-    real results for "AMADA WELD TECH" because titles read "Amada Weld Tech Inc."
-    Matching is token-based now, while still rejecting known name collisions.
+    Two earlier rules lost real coverage. Demanding the FULL name verbatim
+    discarded 74 of 96 results for "AMADA WELD TECH". Then a six-character floor
+    on a single token discarded EVERY third-party result for "Manz AG" (166 of
+    166) and "ACRO Automation Systems": the distinctive token is short, and the
+    press never writes the legal suffix.
+
+    Length is not what makes a token distinctive - being the company's own word
+    rather than an industry word is. COMMON_TOKENS carries that judgement, and
+    COLLISIONS still rejects known name clashes.
     """
     host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
     if domain and (host == domain or host.endswith("." + domain)):
@@ -942,23 +1016,121 @@ def identity_ok(hay, name, name_cn, domain, url):
         return False, "unrelated entity ({})".format(", ".join(hit_reject[:2]))
     if has_cn:
         return True, "chinese-name match"
-    if name and re.search(r"\b" + re.escape(name) + r"\b", hay, re.I):
+    if _mentions(name, hay):
         return True, "full-name match"
+    core = core_name(name)
+    if core and core.lower() != (name or "").lower() and _mentions(core, hay):
+        return True, "name match without legal suffix ({})".format(core)
+    distinct = distinctive_tokens(name)
     tokens = _name_tokens(name)
-    matched = [t for t in tokens if t and t in low]
-    if len(matched) >= 2:
+    # Whole words only. Raw substring matching let "acro" match "macro" and
+    # "acrobat", so a Jiangsu government notice containing neither ACRO nor any
+    # automation vendor was accepted as ACRO coverage.
+    matched = [t for t in tokens if t and _mentions(t, low)]
+    # Two matches only count when at least one is the company's OWN word. Without
+    # this, "Automation systems market to grow 8%" matched ACRO Automation
+    # Systems, and "Battery systems for storage" matched Elite Battery Systems:
+    # a pair of industry words identifies an industry, not a company.
+    if len(matched) >= 2 and any(t in distinct for t in matched):
         return True, "name tokens ({})".format(", ".join(matched[:3]))
-    if len(matched) == 1:
-        t = matched[0]
+    hit = [t for t in distinct if _mentions(t, low)]
+    if hit:
+        t = hit[0]
         if t in host.replace("-", "").replace(".", ""):
             return True, "name token in host ({})".format(t)
-        if len(t) >= 6:
-            return True, "distinctive name token ({})".format(t)
+        # No length floor: "manz" and "acro" identify their companies as surely
+        # as "verkor" does. What disqualifies a token is being an industry word.
+        return True, "distinctive name token ({})".format(t)
     return False, "no identity evidence"
 
 
+# Hosts whose pages are not evidence about a company however plausible the
+# title looks: social feeds, marketplaces, job boards, directories.
+UNVERIFIABLE_HOSTS = (
+    "facebook.", "twitter.", "x.com", "instagram.", "tiktok.", "pinterest.",
+    "youtube.", "reddit.", "quora.", "zhihu.com", "weibo.",
+    "indeed.", "glassdoor.", "linkedin.com/jobs", "jobs.", "careers.",
+    "amazon.", "ebay.", "alibaba.com", "made-in-china.com", "aliexpress.",
+    "yellowpages.", "yelp.", "tripadvisor.",
+    # Recruitment sites carry a company page for everyone and say nothing about
+    # what the company does. zhaopin was retained as Manz "evidence".
+    "zhaopin.", "liepin.", "51job.", "lagou.", "boss.zhipin", "jobs.",
+)
+
+# ── Tier B budget ────────────────────────────────────────────────────────────
+# Measured over 168 deferred candidates across Verkor, Manz AG and ACRO: 14 were
+# genuinely about the company. The old ordering surfaced 6 of those 14 in the
+# first 10 fetches; ordering by source category surfaces 10. Extending to 20
+# adds only 2 more, so the batch stays at 10 and grows only when the evidence is
+# still thin. The ceiling is a guardrail, not a target.
+TIER_B_FETCH_LIMIT = 10          # first batch
+TIER_B_MAX_FETCHES = 30          # hard ceiling across all batches
+
+# Measured hit rate per category, same sample:
+#   financial / investor  7/13  (54%)   <- strongest signal by a wide margin
+#   news / industry       4/26  (15%)
+#   other                 3/124  (2%)
+#   government            0/5    (0%)   <- and the source of two false matches
+# Government is NOT promoted: the sample gave no support for it.
+# Order is CONFIGURABLE: three companies is enough to beat the previous ordering,
+# not enough to fix a universal law. Override with TIER_B_CATEGORY_ORDER, e.g.
+# "news,financial,other,government".
+_DEFAULT_TIER_B_ORDER = ("financial", "news", "other", "government")
+
+
+def _tier_b_order():
+    raw = (os.environ.get("TIER_B_CATEGORY_ORDER") or "").strip()
+    cats = [c.strip() for c in raw.split(",") if c.strip()] if raw else list(_DEFAULT_TIER_B_ORDER)
+    for c in _DEFAULT_TIER_B_ORDER:               # never drop a category entirely
+        if c not in cats:
+            cats.append(c)
+    return {c: i for i, c in enumerate(cats)}
+
+
+TIER_B_CATEGORY_RANK = _tier_b_order()
+
+_FIN_HOSTS = ("gelonghui", "futunn", "finance.yahoo", "xueqiu", "stockstar", "cninfo",
+              "investing.com", "moomoo", "caifuhao.eastmoney", "eastmoney", "stcn",
+              "yicai", "reuters.com/markets", "bloomberg")
+_NEWS_HOSTS = ("reuters", "ft.com", "wsj", "handelsblatt", "faz.net", "jiemian", "caixin",
+               "sina", "sohu", "163.com", "qq.com", "ofweek", "gongkong", "electrive",
+               "just-auto", "autonews", "industryweek", "assemblymag", "lesechos",
+               "usinenouvelle", "cnbeta", "nikkei", "asia.nikkei")
+_GOV_HOSTS = (".gov", ".gouv", "europa.eu", "gov.cn", "miit.", "ndrc.")
+
+
+def source_category(url):
+    """Coarse category used to order Tier B fetching. Measured, not assumed."""
+    host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
+    low = url.lower()
+    if any(k in host or k in low for k in _GOV_HOSTS):
+        return "government"
+    if any(k in host for k in _FIN_HOSTS):
+        return "financial"
+    if any(k in host for k in _NEWS_HOSTS):
+        return "news"
+    return "other"
+
+
+def _plausible_host(url):
+    """Could a page here be real coverage of a company?"""
+    host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
+    if not host or _is_blocked_host(host):
+        return False
+    return not any(b in host or b in url.lower() for b in UNVERIFIABLE_HOSTS)
+
+
 def dedupe_and_rank(raw, name, name_cn, domain):
-    by_url, rejected = {}, []
+    """Split candidates three ways instead of keeping one and binning the rest.
+
+    Tier A - identity confirmed from title/site/URL.
+    Tier B - identity uncertain, host plausible. A headline like "Dunkirk
+             gigafactory reaches first cell production" never names Verkor, and
+             the search provider returns no snippet, so the title alone CANNOT
+             decide. These are opened and judged on their text.
+    Rejected - a known name collision, or a host whose pages are not evidence.
+    """
+    by_url, pending, rejected = {}, {}, []
     for item in raw:
         url = item.get("url") or ""
         key = url_key(url)
@@ -966,19 +1138,111 @@ def dedupe_and_rank(raw, name, name_cn, domain):
             continue
         if key in by_url:
             by_url[key]["hits"] += 1
+            t = item.get("topic")
+            if t and t not in by_url[key]["topics"]:
+                by_url[key]["topics"].append(t)
+            continue
+        if key in pending:
+            pending[key]["hits"] += 1
+            t = item.get("topic")
+            if t and t not in pending[key]["topics"]:
+                pending[key]["topics"].append(t)
             continue
         hay = "{} {} {}".format(item.get("title", ""), item.get("site_name", ""), url)
         ok, reason = identity_ok(hay, name, name_cn, domain, url)
-        if not ok:
-            rejected.append({"title": item.get("title", ""), "url": url, "reason": reason})
-            continue
         tier, kind = classify(url, domain)
-        by_url[key] = {"title": item.get("title", ""), "url": url,
-                       "site_name": item.get("site_name", ""), "tier": tier,
-                       "source_type": kind, "official": tier <= 2, "hits": 1}
+        rec = {"title": item.get("title", ""), "url": url,
+               "site_name": item.get("site_name", ""), "tier": tier,
+               "source_type": kind, "official": tier <= 2, "hits": 1,
+               "topics": [item["topic"]] if item.get("topic") else []}
+        if ok:
+            by_url[key] = rec
+            continue
+        # A collision is a decision, not an uncertainty: never re-open those.
+        if reason.startswith("unrelated entity") or not _plausible_host(url):
+            rejected.append({"title": rec["title"], "url": url, "reason": reason})
+            continue
+        rec["needs_verification"] = True
+        pending[key] = rec
     ranked = sorted(by_url.values(),
                     key=lambda s: (s["tier"], subrank(s["source_type"]), -s["hits"], s["url"]))
-    return ranked, rejected
+    for rec in pending.values():
+        rec["category"] = source_category(rec["url"])
+    # Category first: it predicts relevance far better than tier does among
+    # candidates that already failed the title test.
+    tier_b = sorted(pending.values(),
+                    key=lambda s: (TIER_B_CATEGORY_RANK.get(s["category"], 4),
+                                   s["tier"], subrank(s["source_type"]), -s["hits"], s["url"]))
+    return ranked, rejected, tier_b
+
+
+def apply_evidence_caps(site_evidence, web_evidence):
+    """The production retention rule, as a function.
+
+    Extracted so sufficiency can be judged on the evidence that will actually
+    SURVIVE, not on candidates that the caps are about to discard. Manz verified
+    7 Tier B sources and kept 3; counting the 7 declared success too early.
+    Returns (retained, dropped).
+    """
+    merged = sorted(list(site_evidence) + list(web_evidence),
+                    key=lambda e: (e["tier"], subrank(e["source_type"])))
+    # With a well-covered official site, low-tier trade portals and marketplace
+    # pages add noise rather than evidence. Quality over source count.
+    strong = sum(1 for e in merged if e["tier"] <= 2)
+    low_budget = 2 if strong >= 5 else MAX_LOW_TIER_ITEMS
+    retained, dropped, seen, low_used = [], [], set(), 0
+    for item in merged:
+        key = url_key(item["url"])
+        if key in seen:
+            continue
+        if len(retained) >= MAX_EVIDENCE_ITEMS:
+            dropped.append(dict(item, drop_reason="evidence cap")); continue
+        if item["tier"] >= 6:
+            if low_used >= low_budget:
+                dropped.append(dict(item, drop_reason="low-tier budget")); continue
+            low_used += 1
+        seen.add(key)
+        item = dict(item)
+        item["id"] = len(retained) + 1
+        retained.append(item)
+    return retained, dropped
+
+
+# Independent corroboration, measured on the evidence that survives the caps.
+# The company's own domain is counted SEPARATELY: ten pages from one site is one
+# perspective repeated ten times, and must not satisfy a diversity test.
+SUFFICIENT_THIRD_PARTY = 4
+SUFFICIENT_THIRD_PARTY_HOSTS = 3
+SUFFICIENT_CATEGORIES = 2
+
+
+def evidence_sufficiency(retained, official_domain):
+    """Is the RETAINED evidence broad enough to stop fetching?"""
+    dom = (official_domain or "").lower().replace("www.", "")
+    third = [e for e in retained
+             if not dom or dom not in (e.get("url") or "").lower()]
+    hosts = {urllib.parse.urlparse(e["url"]).netloc.lower().replace("www.", "")
+             for e in third}
+    cats = {source_category(e["url"]) for e in third}
+    topics = set()
+    for e in retained:
+        topics.update(e.get("topics") or [])
+    state = {"retained": len(retained), "third_party": len(third),
+             "third_party_hosts": len(hosts), "categories": len(cats),
+             "topics": len(topics)}
+    state["enough"] = (len(third) >= SUFFICIENT_THIRD_PARTY
+                       and len(hosts) >= SUFFICIENT_THIRD_PARTY_HOSTS
+                       and len(cats) >= SUFFICIENT_CATEGORIES)
+    return state
+
+
+def verify_from_text(text, name, name_cn, url):
+    """Does the PAGE say it is about this company? Same rules as the title test,
+    applied to what the article actually contains."""
+    if not text:
+        return False, "no text"
+    head = text[:6000]                     # the lede carries the subject
+    return identity_ok(head, name, name_cn, "", url)
 
 
 # ---------------------------------------------------------------------------
@@ -991,7 +1255,8 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
     if official_url and not any(s["official"] for s in ranked):
         tier, kind = classify(official_url, domain)
         seeds.append({"title": "(official website)", "url": official_url, "site_name": domain,
-                      "tier": tier, "source_type": kind, "official": True, "hits": 1})
+                      "tier": tier, "source_type": kind, "official": True, "hits": 1,
+                      "topics": ["company overview"]})
     # Choose the candidate slate first, then fetch those pages concurrently.
     # Sequential fetching cost 29.8s in the baseline, 21.7s of it one slow host.
     slate, low_attempts = [], 0
@@ -1010,12 +1275,21 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
         progress("Reading {} source pages...".format(len(slate)))
 
     def _load(src):
+        if src.get("page_text"):
+            # Tier B already downloaded this to verify identity; do not pay twice.
+            return src["page_text"], "verified-tier-b"
         if src["official"] and official_text:
             return official_text, "cached-official"      # already fetched for alias discovery
         return fetch_page_text(src["url"])
 
     pages = parallel_map(_load, slate, FETCH_CONCURRENCY,
                          deadline=EVIDENCE_STAGE_DEADLINE, fallback=("", "timeout"))
+    # Remember what we downloaded. The adaptive loop re-evaluates the retained
+    # set after every Tier B batch, and without this the Tier A pages were
+    # re-fetched each time — Manz spent 197s where it should spend ~120s.
+    for src, (text, _m) in zip(slate, pages):
+        if text and not src.get("page_text"):
+            src["page_text"] = text
 
     evidence, low_kept = [], 0
     for src, (text, method) in zip(slate, pages):
@@ -1036,6 +1310,10 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
             "domain": urllib.parse.urlparse(src["url"]).netloc,
             "tier": src["tier"], "source_type": src["source_type"],
             "official": src["official"], "retrieval_method": method,
+            # Which research areas this source was found for. Survives into the
+            # saved record so coverage gaps become measurable later.
+            "topics": src.get("topics") or [],
+            "category": source_category(src["url"]),
             "text": text[:CHAR_BUDGET.get(src["tier"], 900)],
         })
     return evidence
@@ -1743,7 +2021,14 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
         def _search(item, _model=model):
             qlabel, query = item
-            return run_search(query, cfg, timeout, model=_model)
+            status, results = run_search(query, cfg, timeout, model=_model)
+            # Which research area surfaced this result. Carried through candidate
+            # selection, verification and evidence so retrieval can eventually
+            # reason about GAPS rather than counts. No prompt change: the label
+            # already exists in the query plan.
+            for r in results:
+                r["topic"] = qlabel
+            return status, results
 
         outcomes = parallel_map(_search, plan, SEARCH_CONCURRENCY)
 
@@ -1770,7 +2055,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
             raw.extend(results)
         if failed < len(plan):
             all_failed = False
-        ranked, rejected = dedupe_and_rank(raw, name, name_cn, domain)
+        ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain)
         interim = assess_evidence(site_evidence, name, name_cn, domain, website_status,
                                   ranked=ranked)
         gained = len(raw) - before
@@ -1822,42 +2107,83 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
             for _st, more in parallel_map(
                     lambda q: run_search(q, cfg, timeout, model=(model_candidates(cfg) or [None])[0]),
                     short, SEARCH_CONCURRENCY):
+                for r in more:
+                    r.setdefault("topic", "company overview")
                 raw.extend(more)
             queries = queries + short
-            ranked, rejected = dedupe_and_rank(raw, name, name_cn, domain)
+            ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain)
 
     t = time.time()
+
+    # ---- Tier B: open the uncertain ones and let the page decide -----------
+    # The provider returns no snippet, so a title that omits the company name
+    # proves nothing either way. Rather than discard that coverage, a bounded
+    # number of plausible-host candidates are fetched and judged on their text.
+    already = {url_key(e["url"]) for e in site_evidence}
+    verified_b, b_fetched, b_failed = [], 0, 0
+    queue = [c for c in tier_b if url_key(c["url"]) not in already]
+    stop_reason = "no uncertain candidates"
+    # Adaptive: a small high-value batch, then more ONLY while the evidence is
+    # still narrow. Ordering does the heavy lifting, so most companies stop after
+    # the first batch.
+    while queue and b_fetched < TIER_B_MAX_FETCHES:
+        batch = queue[:TIER_B_FETCH_LIMIT]
+        queue = queue[TIER_B_FETCH_LIMIT:]
+        progress("verify", "Verifying {} uncertain source(s) from page content".format(len(batch)))
+        pages_b = parallel_map(lambda c: fetch_page_text(c["url"]), batch,
+                               FETCH_CONCURRENCY, deadline=EVIDENCE_STAGE_DEADLINE,
+                               fallback=("", "timeout"))
+        for cand, (text, _how) in zip(batch, pages_b):
+            b_fetched += 1
+            ok, why = verify_from_text(text, name, name_cn, cand["url"])
+            if ok:
+                cand["verified_by"] = "page text: {}".format(why)
+                cand["page_text"] = text
+                verified_b.append(cand)
+            else:
+                b_failed += 1
+                rejected.append({"title": cand["title"], "url": cand["url"],
+                                 "reason": "page text: {}".format(why)})
+        # Sufficiency is judged on what would SURVIVE the caps, including Tier A
+        # third-party evidence. Counting verified candidates alone was wrong in
+        # both directions: it ignored Tier A, and it credited Tier B sources the
+        # caps were about to discard.
+        provisional = build_evidence(
+            [r for r in ranked + verified_b if url_key(r["url"]) not in already],
+            name, name_cn, domain, website, None, official_text=official_text)
+        kept, _dropped = apply_evidence_caps(site_evidence, provisional)
+        suff = evidence_sufficiency(kept, domain)
+        progress("verify", "Content verification - {} of {} uncertain source(s) confirmed; "
+                           "retained evidence: {} ({} third-party across {} host(s), "
+                           "{} categor(ies))".format(
+                               len(verified_b), b_fetched, suff["retained"],
+                               suff["third_party"], suff["third_party_hosts"],
+                               suff["categories"]))
+        if suff["enough"]:
+            stop_reason = "evidence sufficient"
+            break
+        if not queue:
+            stop_reason = "candidate pool exhausted"
+            break
+        if b_fetched >= TIER_B_MAX_FETCHES:
+            stop_reason = "safety ceiling reached"
+            break
+        progress("verify", "Evidence still narrow - fetching the next batch")
+    if b_fetched:
+        progress("verify", "Tier B finished after {} fetch(es) - {}".format(b_fetched, stop_reason))
+    ranked = sorted(ranked + verified_b,
+                    key=lambda s: (s["tier"], subrank(s["source_type"]), -s["hits"], s["url"]))
     timings["source_processing"] = round(time.time() - t, 1)
-    progress("dedupe", "Deduplicating evidence - {} candidate sources found, {} retained".format(
-        len(raw), len(ranked)))
+    progress("dedupe", "Deduplicating evidence - {} candidate sources found, {} retained "
+                       "({} confirmed by content)".format(len(raw), len(ranked), len(verified_b)))
 
     t = time.time()
     # Pages already read straight off the official site are not fetched again.
-    already = {url_key(e["url"]) for e in site_evidence}
     web_ranked = [r for r in ranked if url_key(r["url"]) not in already]
     web_evidence = build_evidence(web_ranked, name, name_cn, domain, website,
                                   lambda m: progress("evidence", m),
                                   official_text=official_text)
-    # Direct-site pages lead; everything merges into one ranked, renumbered set.
-    merged = sorted(site_evidence + web_evidence,
-                    key=lambda e: (e["tier"], subrank(e["source_type"])))
-    # With a well-covered official site, low-tier trade portals and marketplace
-    # pages add noise rather than evidence. Quality over source count.
-    strong = sum(1 for e in merged if e["tier"] <= 2)
-    low_budget = 2 if strong >= 5 else MAX_LOW_TIER_ITEMS
-    evidence, seen, low_used = [], set(), 0
-    for item in merged:
-        key = url_key(item["url"])
-        if key in seen or len(evidence) >= MAX_EVIDENCE_ITEMS:
-            continue
-        if item["tier"] >= 6:
-            if low_used >= low_budget:
-                continue
-            low_used += 1
-        seen.add(key)
-        item = dict(item)
-        item["id"] = len(evidence) + 1
-        evidence.append(item)
+    evidence, dropped = apply_evidence_caps(site_evidence, web_evidence)
     timings["evidence_build"] = round(time.time() - t, 1)
     if not evidence:
         ctx = {"website": website, "website_status": website_status}
