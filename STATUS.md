@@ -1,9 +1,9 @@
 # Account Research — Project Status
 
-> Last updated: 2026-09-02
+> Last updated: 2026-09-04
 > Updated by: Claude
-> Current phase: Deployment PREPARED and pre-flight verified; deploy itself needs your Render account
-> Latest change: standalone-engine UI organization pass (presentation only, 2026-09-02)
+> Current phase: Retrieval quality — Tier B verification committed (`f560b63`), NOT pushed
+> Latest change: identity matching, Tier B verification, adaptive fetching, Policy A sufficiency (§0e)
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -302,6 +302,144 @@ is invented.
 
 The `crmContactsFor` cap stays at **40 of 55** for now, deliberately, pending
 Top 20 quality review.
+
+---
+
+## 0e. Retrieval quality — Tier B verification and adaptive fetching (2026-09-04)
+
+Committed as `f560b63`. Measured on Verkor, Manz AG and ACRO Automation Systems.
+
+### The problem
+
+Third-party evidence had collapsed to almost nothing. The identity filter was
+rejecting 97–100% of every non-official candidate, so reports were built almost
+entirely from the company's own website. Source counts looked acceptable; source
+*independence* did not exist.
+
+### Cause 1 — `\b` does not fire against CJK (a regression, not a gap)
+
+`re.search(r"\bacro\b", text)` never matches inside Chinese text, because `\b`
+requires a word/non-word transition and both a Latin letter and a CJK character
+are "word" characters. Every Chinese-language page was silently rejected. Since
+the DashScope backend indexes the Chinese web far better than the English web,
+this removed most of the usable pool.
+
+Fix: `_mentions()` uses explicit ASCII edges instead.
+
+```python
+re.search(r"(?<![A-Za-z0-9])" + re.escape(needle) + r"(?![A-Za-z0-9])", text, re.I)
+```
+
+### Cause 2 — matching was too literal, then too loose
+
+- `core_name()` strips legal suffixes (ag, gmbh, inc, llc, ltd, sas, bv, …), so
+  "Manz" matches a page that says "Manz AG".
+- `distinctive_tokens()` filters generic industry words (auto, motor, energy,
+  battery, systems, automation, …). A two-token match now requires at least one
+  distinctive token; a single distinctive token is accepted with **no length
+  floor**, so short real names are not penalised.
+- Token matching uses `_mentions()`, not substring containment. Previously
+  `"acro" in "macro"` was a match.
+
+### Cause 3 — second-tier candidates were discarded unread
+
+Tier B candidates are now fetched and verified against actual page text rather
+than judged on URL and snippet alone.
+
+### Measured category yield — order is evidence, not assumption
+
+| Category | Tier B candidates fetched | Verified | Rate |
+|---|---|---|---|
+| Financial | 24 | 13 | **54%** |
+| News | 20 | 3 | 15% |
+| Other | 41 | 1 | 2% |
+| Government / regulatory | 5 | 0 | **0%** |
+
+Government sources are *not* prioritised merely because the category sounds
+authoritative; measured, they verified nothing. Order is `financial → news →
+other → government`, configurable via `TIER_B_CATEGORY_ORDER`.
+
+### Result — verified third-party sources at 10 fetches
+
+| Company | Before | After |
+|---|---|---|
+| Verkor | 6 / 14 | **10 / 14** |
+| Manz AG | 0 / 14 | **8 / 14** |
+| ACRO Automation Systems | 0 / 14 | **6 / 14** |
+
+### Adaptive fetching and the sufficiency rule
+
+Tier B fetches in batches of `TIER_B_FETCH_LIMIT` (10) up to
+`TIER_B_MAX_FETCHES` (30), stopping on **evidence sufficient**, **candidate pool
+exhausted**, or **safety ceiling reached**.
+
+**Policy A**, judged on the set that will actually be *retained after caps* —
+not on candidates merely verified during Tier B:
+
+| Condition | Threshold |
+|---|---|
+| Third-party sources | ≥ 4 |
+| Distinct third-party hosts | ≥ 3 |
+| Categories represented | ≥ 2 |
+
+The official domain is excluded from all three counts. An earlier version
+counted pre-cap candidates and declared sufficiency for evidence that was then
+discarded; that was wrong in both directions and is fixed.
+
+### Corrected three-company run
+
+| Company | Fetched | Retained | Third-party | Hosts | Cats | Sufficient | Stop reason |
+|---|---|---|---|---|---|---|---|
+| Verkor | 10 | 11 | 4 | 3 | 2 | **yes** | evidence sufficient |
+| Manz AG | 30 | 8 | 3 | 3 | 2 | no | safety ceiling |
+| ACRO | 30 | 9 | 2 | 1 | 1 | no | safety ceiling |
+
+### Performance
+
+Tier A page text is cached back onto the candidate record, so it is fetched once
+instead of re-fetched on every adaptive batch. Manz: **197s → 164s**.
+
+### Topic attribution
+
+Search results carry the query label that found them. Candidates and evidence
+records carry `topics` and `category`. This is pipeline metadata; **no prompt
+was changed to obtain it**.
+
+### Narrow collision entry, not a general rule
+
+`COLLISIONS` gained an ACRO entry for the unrelated Suzhou companies (ACRO
+Biosystems / 苏州爱克罗). A page is **not** rejected merely for containing
+"Suzhou".
+
+### ⚠ Open limitation — retention is now the binding constraint
+
+`apply_evidence_caps` collapses the low-tier budget from 6 to **2** when five or
+more strong sources are present. Chinese financial hosts classify as **tier 6**.
+So the retention rule discards exactly the category that retrieval works hardest
+to find.
+
+Manz discards 4 verified financial sources. Each one is a **new host, a new
+category, and carries topics the retained set lacks** (competitors, projects,
+strategy, products):
+
+- `gelonghui.com/p/1462071` — products, projects, competitors
+- `caifuhao.eastmoney.com/news/20220609193426889597990` — strategy
+- `gelonghui.com/p/1575897` — competitors
+- `gelonghui.com/p/1781012` — projects, competitors
+
+With them Manz would reach 7 third-party sources across 5 hosts in 3 categories
+and satisfy Policy A on the first batch. Without them it can never satisfy its
+own stopping rule, burns all 30 fetches, and ends with less evidence than it
+gathered. Verkor and ACRO discarded **no** third-party sources; ACRO is thinly
+covered at source, which is a different problem.
+
+**Recommended next change:** the low-tier budget should not apply to third-party
+sources that passed content verification, or verified financial/news sources
+should classify above tier 6. The tier system predates verification, when
+"low tier" meant trade portals and marketplaces.
+
+Status: **NOT STARTED.** Caps were deliberately left unchanged so the retrieval
+measurements above are not confounded.
 
 ---
 
@@ -769,10 +907,19 @@ Retrieval ladder (sequential, cost-aware, access-aware):
 Merge raw results across all waves
   ↓
 Identity filtering (rejects unrelated entities, e.g. SKEQI vs Skechers)
-  ↓
+  ↓         ASCII-edge matching, legal-suffix stripping, distinctive tokens,
+  ↓         narrow per-company collision map.  See §0e.
 Deduplicate on canonical URL key (scheme / www. / trailing slash ignored)
   ↓
-Tier ranking  ──► fetch page text
+Split Tier A (accepted on URL + snippet) / Tier B (needs proof)
+  ↓
+Tier A ──► fetch page text (cached on the candidate, fetched once)
+  ↓
+Tier B ──► adaptive loop, batches of 10 up to 30, ordered
+  ↓         financial → news → other → government (TIER_B_CATEGORY_ORDER):
+  ↓             fetch → verify against page text → apply caps
+  ↓             → evaluate Policy A on the RETAINED set
+  ↓             → stop: sufficient | pool exhausted | ceiling
   ↓
 Merge official-site evidence + web evidence + Yahoo Finance block
   ↓
@@ -813,6 +960,9 @@ official/company-specific source was retrieved.
   search plus any alternate regional domain.
 - A model returning 403 `AccessDenied` is skipped, recorded, and reported as an access failure.
   It is never counted as a retrieval wave and never presented as "not enough evidence".
+- **Evidence retention, not retrieval, is now the binding constraint.** The low-tier budget drops
+  to 2 when 5+ strong sources exist, and Chinese financial hosts are tier 6, so verified
+  third-party financial evidence is discarded. Quantified in §0e.
 
 ---
 
@@ -1078,6 +1228,18 @@ unless billing / model access is enabled.** Do not spend time trying to repair o
 - A model proven denied is remembered for the process and is not retried repeatedly.
 - **Saved reports, PDFs, language switching, batch history and report viewing all work normally.**
 
+### Evidence caps discard verified third-party sources (OPEN, 2026-09-04)
+Severity: **high** — it is the current ceiling on report quality.
+`apply_evidence_caps` cuts the low-tier budget to 2 when 5+ strong sources exist; Chinese
+financial hosts are tier 6. Manz AG loses 4 verified financial sources, each a new host, new
+category and new topics, and can therefore never satisfy Policy A at any fetch budget.
+Fully quantified in §0e. Caps deliberately left unchanged pending your decision.
+
+### ACRO Automation Systems is thinly covered at source (OPEN)
+Distinct from the caps issue: ACRO discards nothing, but only 2 third-party sources from a single
+host verify at all. It runs the full 30 fetches and still fails Policy A. More fetching will not
+help; this is a limit of the index, not of the filter.
+
 ### Live Apollo API unverified — `APOLLO_API_KEY` is still absent
 The key is **not** in `ai_credentials.env`. The real endpoints, response shapes and credit
 headers have never been exercised. Endpoint paths, the `x-api-key` header and the `bulk_match`
@@ -1136,6 +1298,17 @@ Do not artificially inflate source counts with irrelevant sources. Three strong 
 sources beat fifteen unrelated ones. When five or more official sources exist, low-tier trade
 portals are capped at two.
 
+**Amended 2026-09-04.** The principle stands; the *implementation* now works against it. The cap
+was written when "low tier" meant an unverified trade portal. Tier B candidates are now fetched
+and verified against page text, so a tier-6 host can be proven to be about the company — and the
+cap still discards it. Independence of evidence is part of quality, not a trade against it. See
+§0e for the four Manz sources this loses and the recommended fix.
+
+### Sufficiency is judged on retained evidence, not on candidates
+A candidate that passes verification but is then dropped by the caps must never count toward the
+stopping rule. Counting pre-cap candidates makes the pipeline stop early on evidence it will not
+keep.
+
 ### SKEQI grounding
 Never invent SKEQI capabilities.
 
@@ -1163,96 +1336,62 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Standalone-engine UI organization pass (2026-09-02). Presentation only.**
-No backend, research, retrieval, prompt, persistence or Apollo change. Files:
-`templates/index.html`, `static/style.css`, `static/app.js`.
+**Retrieval quality — Tier B verification, identity matching, adaptive fetching.**
+Commit `f560b63`, engine, `research_service.py` only. Full detail in §0e.
 
 | Area | Change |
 |---|---|
-| Language | Four duplicate selectors collapsed into one grouped app-bar control with a helper line |
-| Tabs | Active tab is a filled brand-purple pill; inactive tabs quiet |
-| Single Company | Three status cards; Name \| Website then Model \| Generate, all controls aligned |
-| Batch Research | Setup / Generation / Selection & Management, destructive action right |
-| Reports | Checkboxes, Select All / Clear Selection, Compile Selected, Delete Selected, per-row View \| PDF \| ⋯ (Download, Refresh, Delete) |
-| Fix | Compile Selected read the batch table's selection; it now reads the library's own |
-| Fix | Library selection syncs in place instead of rebuilding 29 rows per tick |
-| Fix | `--appbar-h` measured at runtime; the tab bar no longer assumes a 59px app bar |
+| Identity | `_mentions()` ASCII edges — `\b` never fired against CJK, rejecting every Chinese page |
+| Identity | `core_name()` strips legal suffixes; `distinctive_tokens()` filters generic industry words |
+| Identity | Token match uses `_mentions()`, not substring — `"acro" in "macro"` was matching |
+| Identity | Narrow `COLLISIONS` entry for ACRO / Suzhou; "Suzhou" alone never rejects a page |
+| Tier B | Second-tier candidates fetched and verified against page text instead of discarded |
+| Tier B | Measured category order financial → news → other → government, via `TIER_B_CATEGORY_ORDER` |
+| Tier B | Job boards and marketplaces added to `UNVERIFIABLE_HOSTS` |
+| Adaptive | Batches of 10 to a 30 ceiling; stop on sufficient / exhausted / ceiling |
+| Sufficiency | Policy A on the **retained** set: ≥4 third-party, ≥3 hosts, ≥2 categories, official excluded |
+| Performance | Tier A page text cached on the candidate — Manz 197s → 164s |
+| Metadata | Query-label topic attribution on candidates and evidence; no prompt change |
 
-### VERIFIED — headless Chromium against the running app, 2026-09-02
+**Measured before → after, verified third-party sources at 10 fetches:**
+Verkor 6/14 → 10/14, Manz AG 0/14 → 8/14, ACRO 0/14 → 6/14.
 
-| Check | Result |
-|---|---|
-| Exactly one language control, in the app bar | ✓ 1 `[data-langgroup]` |
-| Language choice persists and re-renders | ✓ `localStorage` = zh, buttons follow |
-| Active tab filled `#4F2582`, white text, one active | ✓ all three tabs |
-| Name / Website share a row; Model / Generate share the next | ✓ tops equal |
-| All four controls 36px | ✓ one distinct height |
-| Website label stays one line (17px) with the badge | ✓ 1440 / 1280 / 1100 |
-| Checkbox per report | ✓ 29 |
-| Select All / Clear Selection / live count | ✓ 29 selected, then 0 |
-| Selection survives searching and re-render | ✓ same two companies |
-| Compile Selected with nothing ticked | ✓ warns, no API call |
-| Compile Selected honours the global language | ✓ POST carried `"lang":"zh"` + the 2 ticked companies, 2-company PDF returned |
-| Per-row ⋯ contains Download / Refresh / Delete | ✓ not clipped |
-| View → saved `research.json`; PDF → embedded viewer | ✓ |
-| PDF viewer opens with no language control of its own | ✓ requested `lang=zh` |
-| Status cards populate | ✓ model + state, 29, 2026-09-02 |
-| Batch: three area headings, Delete Selected separated right | ✓ 1222px gap |
-| Console / page errors | ✓ none |
-| Horizontal overflow at 1440 / 1280 / 1100 / 420 | ✓ none |
+**Not changed, deliberately:** evidence caps, prompts, model routing, synthesis,
+Apollo, Yahoo Finance, persistence. The caps are the next decision (§0e).
 
-**Test artifact:** the compile check wrote
-`reports/Selected_Companies_Account_Research_ZH_2026-09-02.pdf`. Harmless and
-regenerable with no AI tokens; delete it if unwanted.
+### Verified — retrieval only, no synthesis, no paid generation
+Three-company corrected run with checkpoints at 10 / 20 / 30 Tier B fetches.
+Verkor stops at the first batch on sufficiency. Manz and ACRO run to the ceiling.
+No report was generated and no synthesis model was called for any of this work.
 
-### NOT DONE — needs the CRM repository
-
-The user's requests referred to CRM-side chrome: the
-**Current Account Research (Qwen-based) / Previous Account Research (Claude-based)**
-tab pair, and matching the **Previous Claude page** as a visual reference.
-Neither is on this machine — a filesystem search for `qwen-research.js` and for
-the string "Current Account Research" in `.html` / `.js` outside `node_modules`
-returned nothing. So:
-
-- The outer Current/Previous tab pair was **not** restyled. Only the engine's own
-  Single Company / Batch Research / Reports bar was.
-- Card radius, borders, typography and content width were matched to **this app's**
-  existing tokens, not measured against the Claude page.
-- Every change above still has to be **ported into the CRM's `public/index.html`
-  and `public/qwen-research.js`**, in the repository that holds them.
+---
 
 ## 15. Current Work In Progress
 
-**UI organization pass**
-Status: **IMPLEMENTED and TESTED in the standalone engine**, uncommitted.
-**NOT STARTED in the CRM** — that repository is not on this machine.
+**Retrieval quality** — committed `f560b63`, **NOT pushed**. Pushing redeploys the
+Render engine, which changes live behaviour, so it is held for your approval.
 
-**Phases 1–3 — CRM integration**
-Status: **COMPLETE and verified.** Neon persistence, proxy, and a native
-workspace. Awaiting your approval before pushing the branch.
+**Evidence retention policy** — **NOT STARTED.** Diagnosed and quantified (§0e);
+no code changed. This is the open decision.
 
-**Render deployment**
-Status: PREPARED, NOT DEPLOYED. See `DEPLOY.md`. Note Phase 1 removes the worst
-consequence of ephemeral disk for *completed* reports once Phase 2 writes new
-runs to Neon; today only the migrated history is durable.
+**CRM** (`account-research-qwen`) — durable jobs, batch durability, CRM-first
+contacts and the UI port are all implemented and verified against live Neon.
 
-**DashScope model activation** — RESOLVED 2026-09-03; all three models available.
-**Apollo** — implemented and live locally; see §0a. Render env var still pending.
+**Render deployment** — engine redeploy for `f560b63` not performed.
+`CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. **Port the UI organization pass into the CRM** (`public/index.html`,
-   `public/qwen-research.js`) — that repository is not on this machine, so the
-   Current/Previous tab pair and the Claude-page visual match are still open.
-2. **Review the pushed branch** and open a PR when ready
-   (`account-research-qwen`, 5 commits, `main` untouched).
-3. When model access is activated, run one live company end-to-end to confirm
-   new research → Neon upsert and regenerate → safe replacement.
-4. Deploy both services to Render per `DEPLOY.md`, setting `APP_SERVICE_KEY` on
-   the engine and `ACCOUNT_RESEARCH_SERVICE_KEY` on the CRM to the same value.
-5. Add `APOLLO_API_KEY` and verify Apollo live.
+1. **Decide the retention policy** (§0e). Recommended: exempt *verified*
+   third-party sources from the low-tier budget, or classify verified
+   financial/news above tier 6. This is the current ceiling on report quality.
+2. **Push `f560b63`** and confirm the Render engine redeploys.
+3. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render.
+4. Re-measure the three companies after the retention change and confirm Manz
+   stops early instead of burning 30 fetches.
+5. PowerCo has still never run; the batch queue lives in the browser tab.
 
 ---
 
@@ -1289,39 +1428,50 @@ runs to Neon; today only the migrated history is durable.
   own selection.
 - Do not hard-code the tab bar's sticky offset; it follows `--appbar-h`.
 - Do not give `.liblist` a scroll container again — it clips the per-row ⋯ menu.
+- Do not reintroduce `\b` in company-name matching. It cannot fire against CJK and
+  silently rejects the entire Chinese-language pool. Use `_mentions()`.
+- Do not match company tokens by substring; `"acro"` is inside `"macro"`.
+- Do not add a general "reject pages mentioning city X" rule. Use the narrow
+  per-company `COLLISIONS` map.
+- Do not prioritise government/regulatory sources by category reputation. Measured,
+  they verified 0 of 5. Order is `TIER_B_CATEGORY_ORDER`.
+- Do not judge evidence sufficiency on verified candidates. It must be the set
+  retained after caps, or the pipeline stops on evidence it discards.
+- Do not remove the Tier A page-text cache; without it every adaptive batch
+  re-downloads the official site.
 
 ---
 
 ## 18. Session Handoff
 
 **Last successful operation:**
-Verified the standalone engine UI in headless Chromium against the running app on
-port 5062: one language control, filled active tabs, aligned research row, the new
-Reports management including a real 2-company compile in Chinese, and the embedded
-PDF viewer. No console or page errors, no horizontal overflow at 1440, 1280, 1100
-or 420px.
+Corrected three-company retrieval run with checkpoints at 10 / 20 / 30 Tier B
+fetches, then commit `f560b63`. Retrieval only — no synthesis, no paid generation.
 
 **Current stopping point:**
-The UI organization pass is **complete and verified in the standalone engine**, and
-**uncommitted**. The equivalent work in the CRM is **NOT STARTED** because that
-repository is not on this machine.
+The retrieval-quality work is **committed and NOT pushed**. The retention-policy
+change is **NOT STARTED** and is the open decision, fully quantified in §0e.
+
+**The one thing to know:**
+Retrieval is no longer the bottleneck; **retention is**. Tier B verification now
+finds verified third-party sources, and `apply_evidence_caps` then discards them
+— specifically the Chinese financial hosts that verify at 54%, the best-yielding
+category. Manz AG loses 4 such sources, each adding a new host, a new category
+and new topics, so it can never satisfy its own sufficiency rule.
 
 **Recommended next command/action:**
-Open this project in the CRM repository and port the pass (see section 14,
-"NOT DONE"). Or commit the engine changes here first.
+Decide the retention policy, then push. Do not re-measure retrieval before
+changing retention; the retrieval numbers in §0e are clean and current.
 
-**Uncommitted changes:**
-Engine: `templates/index.html`, `static/style.css`, `static/app.js`, `STATUS.md`.
-CRM: unchanged — branch `account-research-qwen`, five commits, `main` untouched.
+**Uncommitted changes:** `STATUS.md` only. `research_service.py` is committed.
 
 **Application currently runnable:** Yes. `PORT=5062 .venv/bin/python app.py`.
-Note Chrome refuses port 5061 as an unsafe port; 5057 and 5062 are fine.
+Chrome refuses port 5061 as unsafe; 5057 and 5062 are fine.
 
 **Known blockers / limitations:**
-1. The CRM repository is absent here, so the Current/Previous tab pair and the
-   Claude-page visual reference could not be touched.
-2. Live new research WORKS as of 2026-09-03 and costs tokens. Do not run it to test.
-3. In-flight batches live in the engine's memory; a restart loses progress but
-   never a completed report.
-4. Render deployment not performed.
-5. `APOLLO_API_KEY` set locally; still to be added on Render (§0a).
+1. Evidence caps discard verified third-party evidence (§0e) — open decision.
+2. ACRO is thinly covered at source; more fetching will not fix it.
+3. `f560b63` is not pushed, so Render still runs the previous engine.
+4. Live research costs tokens. Do not run Generate or Refresh to test UI.
+5. In-flight batches live in the browser tab; PowerCo never ran.
+6. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
