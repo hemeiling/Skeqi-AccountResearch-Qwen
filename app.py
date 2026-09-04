@@ -19,6 +19,7 @@ import json
 import re
 import tempfile
 import threading
+import urllib.request
 import time
 import uuid
 import zipfile
@@ -114,8 +115,57 @@ def save_run(package, run):
     return record
 
 
+# ── CRM callback ─────────────────────────────────────────────────────────────
+# The engine owns the run; the CRM owns the database. When a run finishes the
+# engine POSTs the result to the CRM, which writes it to Neon. Nothing here
+# depends on a browser being open, which is the whole point: research the user
+# paid for must land even if they closed the tab.
+#
+# The engine never talks to Neon directly. One shared secret, APP_SERVICE_KEY
+# here and ACCOUNT_RESEARCH_SERVICE_KEY there, authenticates the call.
+CALLBACK_TIMEOUT = 45
+
+
+def _callback_target(job):
+    """Where to report, per job, falling back to the deployment default."""
+    return (job or {}).get("callback_url") or os.environ.get("CRM_CALLBACK_URL") or ""
+
+
+def notify_crm(job_id, payload):
+    """Best effort, and deliberately silent about its own failures.
+
+    A callback that cannot be delivered must never take down a run that already
+    succeeded: the report is still on disk and the CRM can still poll for it.
+    The outcome is recorded on the job so it is visible rather than guessed at.
+    """
+    with JOBS_LOCK:
+        job = dict(JOBS.get(job_id) or {})
+    url = _callback_target(job)
+    if not url:
+        return False, "CRM_CALLBACK_URL is not set"
+    key = (rs.load_config().get("APP_SERVICE_KEY")
+           or os.environ.get("APP_SERVICE_KEY") or "").strip()
+    body = json.dumps(dict(payload, job_id=job_id)).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "Content-Type": "application/json",
+        "X-AR-Service-Key": key,            # never logged
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=CALLBACK_TIMEOUT) as resp:
+            return True, json.loads(resp.read().decode("utf-8") or "{}")
+    except Exception as e:
+        return False, "{}: {}".format(type(e).__name__, e)[:200]
+
+
 def worker(job_id, company, website, models, use_cache, force=False, known_contacts=None):
     t_wall = time.time()
+
+    # Stage keys in the order the pipeline reaches them, so a percentage can be
+    # derived from real progress rather than a timer.
+    STAGE_ORDER = ("discover", "official", "listing", "queries", "site", "search",
+                   "financial", "apollo", "contacts", "dedupe", "evidence",
+                   "quality", "model")
+    seen_stages = set()
 
     def progress(stage, message, **extra):
         def m(job):
@@ -124,6 +174,14 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             if extra.get("queries"):
                 job["search_queries"] = extra["queries"]
         update(job_id, m)
+        # Heartbeat to the CRM. It doubles as the liveness signal that stops the
+        # job being swept as interrupted, so it is sent for every stage.
+        seen_stages.add(stage)
+        pct = int(round(len(seen_stages) / (len(STAGE_ORDER) + 3) * 100))
+        threading.Thread(target=notify_crm, args=(job_id, {
+            "event": "progress", "stage": stage, "progress_percent": min(pct, 95),
+            "warning": message if str(message).startswith("WARN") else None,
+        }), daemon=True).start()
 
     try:
         cfg = rs.load_config()
@@ -155,6 +213,10 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 status="needs_review", phase="needs_review",
                 message="Research retrieval incomplete.",
                 wall_seconds=round(time.time() - t_wall, 1)))
+            # Not a failure and not a report: nothing is stored, and the job is
+            # closed so it stops blocking the next attempt for this company.
+            notify_crm(job_id, {"event": "failed",
+                                "error": "Retrieval incomplete - nothing was generated."})
             return
 
         def run_model(model):
@@ -199,6 +261,31 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             status="done", phase="done",
             wall_seconds=round(time.time() - t_wall, 1)))
 
+        # The report is finished. Hand it to the CRM to store; this is the ONLY
+        # path by which a completed run reaches Neon.
+        with JOBS_LOCK:
+            snap = dict(JOBS.get(job_id) or {})
+        saved_any = False
+        for m in (snap.get("models") or {}).values():
+            if m.get("status") == "complete" and m.get("result"):
+                ok, detail = notify_crm(job_id, {
+                    "event": "completed",
+                    "company_name": company,
+                    "website": website,
+                    "model": m.get("model"),
+                    "record": m["result"],
+                    "warnings": [st["message"] for st in (snap.get("stages") or [])
+                                 if str(st.get("message", "")).startswith("WARN")],
+                })
+                saved_any = saved_any or ok
+                update(job_id, lambda j, ok=ok, d=detail:
+                       j.update(crm_persisted=ok, crm_detail=d))
+        if not saved_any and (snap.get("models") or {}):
+            # Say so loudly on the job: the run cost money and may not be stored.
+            update(job_id, lambda j: j.update(
+                crm_persisted=False,
+                message="Research finished but the CRM callback did not confirm storage."))
+
     except rs.RetrievalError as e:
         # Retrieval exhausted every fallback and found nothing usable. This is a
         # reviewable outcome with next steps, not an opaque failure.
@@ -213,10 +300,13 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                      "reasons": [rs.FAILURE_REASONS.get(e.reason, str(e))]},
             website=e.website or j.get("website"),
             wall_seconds=round(time.time() - t_wall, 1)))
+        notify_crm(job_id, {"event": "failed",
+                            "error": "Retrieval incomplete - nothing was generated."})
     except Exception as e:
         update(job_id, lambda j: j.update(status="error", phase="error",
                                           message=str(e)[:300],
                                           wall_seconds=round(time.time() - t_wall, 1)))
+        notify_crm(job_id, {"event": "failed", "error": str(e)[:400]})
 
 
 @app.route("/")
@@ -293,6 +383,7 @@ def api_research():
     choice = (body.get("model") or "").strip()
     # Contacts the CRM already holds, attached by its proxy. Never required.
     known_contacts = body.get("known_contacts") or []
+    callback_url = (body.get("callback_url") or "").strip()
     use_cache = bool(body.get("use_cache"))
     force = bool(body.get("force"))          # explicit "Generate Anyway"
     if not company:
@@ -309,6 +400,7 @@ def api_research():
             "stages": [], "search_queries": [], "sources": [],
             "evidence_cached": False, "retrieval_timings": {},
             "financial_sources": {}, "apollo_usage": {}, "quality": {},
+            "callback_url": callback_url,
             "models": {m: {"model": m, "label": rs.MODEL_LABELS[m], "status": "pending",
                            "elapsed": None, "result": None, "error": None,
                            "token_usage": None, "started_at": None}
