@@ -12,7 +12,7 @@
   --sh-1:0 1px 2px rgba(16,24,40,.05);
   --sh-2:0 1px 3px rgba(16,24,40,.07),0 1px 2px rgba(16,24,40,.04);
   --sh-3:0 8px 24px rgba(16,24,40,.10);
-  --ctl-h:36px;
+  --ctl-h:36px; --appbar-h:59px;
 }
 *{box-sizing:border-box}
 /* Several components set display:flex, which outranks the UA agent's
@@ -37,23 +37,44 @@ a:hover{text-decoration:underline}
 .mode .cn,.cardhd h2 .cn,.side h2 .cn{margin-left:5px}
 button .cn,.mini .cn,.linkbtn .cn{opacity:.85;font-weight:500}
 button.primary .cn,.btn-primary .cn,.langbtn.active .cn{color:#e5dcf3;opacity:1}
-.mode.active .cn{color:var(--brand);opacity:.72}
+.mode.active .cn{color:#e5dcf3;opacity:1}
 label .cn,.hint .cn,.empty .cn,.chk .cn{display:inline}
 .hint .cn,.empty .cn{display:block;margin-top:2px}
 .chk .cn{margin-left:4px}
 .opt{font-weight:500;color:#9aa2ae;font-size:.86em;margin-left:4px}
+.form-aligned .opt{display:inline-flex;align-items:center;height:15px;padding:0 6px;
+  border-radius:4px;background:#f1f2f5;color:var(--muted);font-size:10.5px;font-weight:600;
+  line-height:1;white-space:nowrap;flex:none}
 .batchtable th{line-height:1.35}
 .brandtext h1 .cn{color:var(--muted);font-weight:500;margin-left:6px;font-size:14px}
 .brandtext .tagline{margin:1px 0 0;color:var(--muted);font-size:12px;line-height:1.35}
 .brandtext .tagline .cn{margin-left:6px}
+/* Below a wide desktop the language picker needs the room; the status cards
+   carry this context anyway. */
+@media (max-width:1340px){.brandtext .tagline{display:none}}
 .appbar-right{margin-left:auto;display:flex;align-items:center;gap:8px;position:relative}
+/* Label, helper line and segmented control read as ONE setting. */
+.langpick{display:flex;align-items:center;gap:10px;padding:6px 10px;background:#fbfbfd;
+  border:1px solid var(--line);border-radius:var(--r-sm)}
+.langpick-text{display:flex;flex-direction:column;gap:1px;min-width:0}
+.langpick .langlabel{font-size:11.5px;font-weight:650;color:var(--ink-2);white-space:nowrap}
+.langpick .langhelp{font-size:10.5px;color:var(--muted);line-height:1.3;white-space:nowrap}
+.langpick .langhelp .cn{font-size:1em;margin-left:5px}
+@media (max-width:1100px){.langpick .langhelp{display:none}}
+@media (max-width:820px){.langpick-text{display:none}}
 
 .tabbar{display:flex;gap:2px;padding:0 28px;background:var(--card);
-  border-bottom:1px solid var(--line);position:sticky;top:59px;z-index:39;overflow-x:auto}
-.mode{font:inherit;font-size:13.5px;font-weight:550;background:none;border:0;color:var(--muted);
-  padding:11px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
-.mode:hover{color:var(--ink-2)}
-.mode.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:650}
+  border-bottom:1px solid var(--line);position:sticky;top:var(--appbar-h,59px);
+  z-index:39;overflow-x:auto}
+/* The selected tab is filled brand purple: at a glance, with no ambiguity.
+   Inactive tabs stay quiet — muted text on the bar's own background. */
+.tabbar{padding-top:7px;padding-bottom:7px;gap:6px}
+.mode{font:inherit;font-size:13.5px;font-weight:600;background:none;border:1px solid transparent;
+  color:var(--muted);padding:8px 15px;cursor:pointer;border-radius:var(--r-sm);white-space:nowrap}
+.mode:hover{color:var(--brand-700);background:var(--brand-soft)}
+.mode.active{color:#fff;background:var(--brand);border-color:var(--brand);font-weight:650;
+  box-shadow:var(--sh-1)}
+.mode.active:hover{background:var(--brand-600);color:#fff}
 
 main{padding:22px 28px 56px;max-width:1440px;margin:0 auto}
 
@@ -78,6 +99,50 @@ input::placeholder{color:#9aa2ae}
 input:focus,select:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
 .chk{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);font-weight:500}
 .chk input{height:auto}
+
+/* --- aligned two-up form ---------------------------------------------------
+   Single Company and Batch Setup share one grammar: a fixed-height label row
+   above a control of --ctl-h. Fixing the label row is what makes the inputs,
+   the select and the Generate button start at the same y and share a baseline,
+   even where a column (the action) has no label of its own. */
+.form-aligned{align-items:start}
+.form-aligned .field{gap:5px}
+.form-aligned label{display:flex;align-items:center;gap:6px;height:17px;line-height:17px;
+  white-space:nowrap}
+.form-aligned label .opt{margin-left:0}
+.form-aligned input[type=file]{height:var(--ctl-h);padding:6px 10px}
+.form-aligned .actions{grid-column:auto;display:flex;flex-direction:column;
+  align-items:flex-end;justify-content:flex-start;gap:5px}
+.form-aligned .actions .lblspacer{display:block;height:17px;width:100%}
+.form-aligned .actions .primary{width:auto;min-width:230px}
+/* A full-width row inside the grid — the batch "skip existing" option. */
+.form-aligned .fieldwide{grid-column:1/-1;display:flex;align-items:center;min-width:0}
+@media (min-width:721px){.form-2up{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* --- grouped areas ---------------------------------------------------------
+   Setup / Generation / Selection & Management. The heading is what turns a
+   scattered row of controls into three readable areas. */
+.group{margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2)}
+.group:first-child{margin-top:0;padding-top:0;border-top:0}
+.grouphd{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 10px}
+.grouphd .cn{font-size:11px;letter-spacing:0;text-transform:none;margin-left:5px}
+.selcount{font-size:12px;color:var(--muted);font-weight:550}
+
+/* --- workspace status cards ------------------------------------------------ */
+.statcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+@media (max-width:820px){.statcards{grid-template-columns:1fr}}
+.statcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:13px 15px;box-shadow:var(--sh-1);display:flex;flex-direction:column;gap:3px;min-width:0}
+.statcard .sc-k{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
+.statcard .sc-k .cn{font-size:11px;letter-spacing:0;text-transform:none;font-weight:600}
+.statcard .sc-v{font-size:17px;font-weight:650;letter-spacing:-.01em;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.statcard .sc-m{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.statcard.is-ok .sc-v{color:var(--ok)}
+.statcard.is-err .sc-v{color:var(--err)}
 
 /* ------------------------------------------------------------------ buttons */
 button{font:inherit}
@@ -127,6 +192,7 @@ button.primary:disabled,.btn-primary:disabled{background:#b9a8d2;border-color:#b
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:16px;align-items:start}
 @media (max-width:1100px){.layout{grid-template-columns:1fr}}
 @media (max-width:720px){.form{grid-template-columns:1fr}main{padding:16px 14px 40px}
+  .form-aligned label{white-space:normal;height:auto;min-height:17px}
   .appbar,.tabbar{padding-left:14px;padding-right:14px}}
 .side h2{font-size:12px;text-transform:none;letter-spacing:0;color:var(--ink);
   margin:18px 0 8px;font-weight:650}
@@ -285,12 +351,16 @@ button.primary:disabled,.btn-primary:disabled{background:#b9a8d2;border-color:#b
 
 /* ------------------------------------------------------------ report library */
 .libsearch{width:100%;margin-bottom:10px}
-.liblist{list-style:none;margin:0;padding:0;font-size:13px;max-height:520px;overflow:auto}
+.liblist{list-style:none;margin:0;padding:0;font-size:13px}
 .liblist li{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line-2)}
+.liblist .libcb{height:auto;flex:none;margin:0;accent-color:var(--brand)}
+.liblist li.sel{background:var(--brand-soft);border-radius:var(--r-xs)}
 .liblist li:last-child{border-bottom:0}
 .liblist .co{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .liblist .mt{color:var(--muted);font-size:11.5px;white-space:nowrap}
 .liblist .sp{margin-left:auto;display:flex;gap:5px}
+.compilebox .primary,.compilebox .mini{white-space:normal;height:auto;min-height:var(--ctl-h);
+  padding:8px 14px;line-height:1.35;text-align:center;display:block;width:100%}
 .compilebox{display:flex;flex-direction:column;gap:9px;padding:14px;background:#fbfbfd;
   border:1px solid var(--line);border-radius:var(--r);margin-bottom:14px}
 .compilebox .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}

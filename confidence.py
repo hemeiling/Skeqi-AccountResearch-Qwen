@@ -144,6 +144,41 @@ _SUBSTANCE_MIN = 30
 _TAG_ONLY = re.compile(
     r"\*\*\s*(?:Not enough evidence / 证据不足|Likely / 可能|Verified / 已验证)\s*\*\*")
 
+# Models sometimes emit a malformed badge — an unclosed bold, a doubled tag, or
+# the English half on its own: "**Not enough evidence / 证据不足. **Not enough
+# evidence**". Stripping only the well-formed spelling left "Not enough
+# evidence**" visible in the report. Anything that reads as the badge counts.
+_TAG_LOOSE = re.compile(
+    r"\*{0,2}\s*(?:not\s+enough\s+evidence|insufficient\s+evidence)"
+    r"(?:\s*[/、]\s*证据不足)?\s*\*{0,2}", re.I)
+_TAG_LOOSE_CN = re.compile(r"\*{0,2}\s*证据不足\s*\*{0,2}")
+
+# A line whose whole message is "this information is not available" is not a
+# finding, however many words it spends saying so. _SUBSTANCE_MIN alone kept
+# these because they are long; the test is what the words MEAN, not how many.
+_ABSENCE = re.compile(
+    r"^(?:[^.。]*?\b(?:are|is|was|were|has|have|had|could|can)?\s*"
+    r"(?:not|no|none)\b[^.。]*?\b(?:disclosed|available|published|reported|"
+    r"documented|found|specified|provided|stated|identified|listed|detailed|"
+    r"quantified|broken\s+out|given)\b[^.。]*)$"
+    r"|^(?:[^.。]*(?:未(?:披露|公开|提及|说明|找到|列出)|无(?:公开|相关|具体|详细)"
+    r"[^。]{0,8}(?:信息|数据|资料)|暂无[^。]{0,10})[^.。]*)$", re.I)
+
+
+def is_absence_only(line):
+    """True when the line reports only the ABSENCE of information.
+
+    Citations are the guard: "revenue was X, though the split is not disclosed
+    [3]" is a sourced finding and must survive. A line with no citation whose
+    residue is a single absence clause has nothing to tell the reader.
+    """
+    if re.search(r"\[\d+\]", line or ""):
+        return False
+    body = residue(line)
+    if not body:
+        return True
+    return bool(_ABSENCE.match(body.strip()))
+
 
 def residue(line):
     """What is left of a line once tags, citations and markup are removed."""
@@ -160,7 +195,7 @@ def is_placeholder(line):
     tags = verdicts(line)
     if NOT_ENOUGH not in tags or (tags & {VERIFIED, LIKELY}):
         return False
-    return len(residue(line)) < _SUBSTANCE_MIN
+    return len(residue(line)) < _SUBSTANCE_MIN or is_absence_only(line)
 
 
 def _strip_unsupported_tag(line):
@@ -174,6 +209,10 @@ def _strip_unsupported_tag(line):
     if NOT_ENOUGH not in verdicts(line):
         return line
     out = re.sub(r"\*\*\s*Not enough evidence / 证据不足\s*\*\*", "", line)
+    # Sweep any malformed remnant, then tidy the asterisks it leaves behind.
+    out = _TAG_LOOSE.sub("", out)
+    out = _TAG_LOOSE_CN.sub("", out)
+    out = re.sub(r"\*{2,}", "", out)
     for _ in range(2):
         out = re.sub(r"([:：])\s*(?:[/、]\s*)+", r"\1 ", out)
         out = re.sub(r"([:：])\s*[.。;；,，]+\s*", r"\1 ", out)
@@ -181,6 +220,42 @@ def _strip_unsupported_tag(line):
     out = re.sub(r"\s{2,}", " ", out)
     out = re.sub(r"\s+([.。;；,，])", r"\1", out)
     return out.rstrip(" /、").rstrip()
+
+
+# Some models write the absence as ordinary prose rather than as a badge:
+# "关于X的证据不足。" or "…: 所给材料中为Not enough evidence。" Those sentences read
+# as filler, but they can sit in the same line as real sourced findings, so the
+# unit of removal is the SENTENCE, never the whole line.
+_SENT_SPLIT = re.compile(r"(?<=[.。!！?？])\s*")
+_ABSENCE_MARK = re.compile(
+    r"not\s+enough\s+evidence|insufficient\s+evidence|证据不足|信息不足|"
+    r"未(?:披露|公开|提及|说明|找到|列出|核实)|无(?:公开|相关|具体|详细)", re.I)
+
+
+def prune_absence_sentences(line):
+    """Drop sentences that only report an absence; keep everything else.
+
+    A sentence is kept whenever it carries a citation or a Verified/Likely
+    badge — that is sourced content, and a caveat inside it is not filler.
+    """
+    if not _ABSENCE_MARK.search(line or ""):
+        return line
+    prefix = re.match(r"^\s*(?:[-*+]|\d+\.)\s*", line or "")
+    head = prefix.group(0) if prefix else ""
+    body = line[len(head):] if head else line
+    parts = [p for p in _SENT_SPLIT.split(body) if p.strip()]
+    if len(parts) <= 1 and not _ABSENCE_MARK.search(body):
+        return line
+    kept = []
+    for part in parts:
+        if (_ABSENCE_MARK.search(part)
+                and not re.search(r"\[\d+\]", part)
+                and not re.search(r"Verified / 已验证|Likely / 可能", part)):
+            continue
+        kept.append(part)
+    if not kept:
+        return ""
+    return head + " ".join(k.strip() for k in kept)
 
 
 def _drop(line):
@@ -212,7 +287,10 @@ def _filter_block(lines):
             continue
         if _drop(line):
             continue
-        out.append(_strip_unsupported_tag(line))
+        cleaned = prune_absence_sentences(_strip_unsupported_tag(line))
+        if not cleaned.strip() and line.strip():
+            continue                       # every sentence was filler
+        out.append(cleaned)
         if re.match(r"^\s*([-*+]|\d+\.)\s+\S", line) or line.strip():
             content = True
     flush()

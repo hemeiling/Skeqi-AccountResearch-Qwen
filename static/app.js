@@ -477,6 +477,7 @@ async function refreshModelHealth(probe) {
   MODEL_HEALTH = {};
   d.models.forEach((m) => { MODEL_HEALTH[m.model] = m.state; });
   renderModelOptions();
+  renderStatusCards();
   return d;
 }
 
@@ -505,6 +506,57 @@ function toggleSystemStatus(e) {
       </tbody></table>
       ${d.any_available ? "" : `<p class="foot">${esc(ACTIVATION_MSG)}</p>`}`;
   });
+}
+
+// ------------------------------------------------- workspace status cards
+// Model / Connection, Saved Reports, Last Generated. Every value comes from a
+// response the page already has; nothing here triggers a request of its own.
+function renderStatusCards() {
+  const m = $("model") ? $("model").value : "";
+  const chosen = APP_MODELS.find((x) => x.id === m);
+  const card = (id) => document.querySelector(`#${id}`) && document.querySelector(`#${id}`).closest(".statcard");
+
+  const mv = $("sc-model"), mn = $("sc-modelnote"), mc = card("sc-model");
+  if (mv) {
+    const state = m === "all" ? null : MODEL_HEALTH[m];
+    mv.textContent = m === "all" ? "All three models / 全部三个模型"
+                                 : (chosen ? chosen.label : "—");
+    if (mc) mc.classList.remove("is-ok", "is-err");
+    if (m === "all") {
+      const any = APP_MODELS.some((x) => MODEL_HEALTH[x.id] === "available");
+      mn.textContent = any ? "DashScope · at least one model ready / 至少一个模型可用"
+                           : "DashScope · activation required / 需开通";
+      if (mc) mc.classList.add(any ? "is-ok" : "is-err");
+    } else if (state === "available") {
+      mn.textContent = "DashScope · connected / 已连接";
+      if (mc) mc.classList.add("is-ok");
+    } else if (state === "access_denied") {
+      mn.textContent = "Activation required / 需开通付费";
+      if (mc) mc.classList.add("is-err");
+    } else {
+      mn.textContent = "DashScope · status unknown / 状态未知";
+    }
+  }
+
+  const rv = $("sc-reports"), rn = $("sc-reportsnote");
+  if (rv) {
+    rv.textContent = String(REPORT_LIBRARY.length);
+    rn.textContent = REPORT_LIBRARY.length
+      ? "In the report library / 报告库中" : "No reports yet / 暂无报告";
+  }
+
+  const lv = $("sc-last"), ln = $("sc-lastnote");
+  if (lv) {
+    // completed_pdfs() returns newest first; take the first dated entry.
+    const latest = REPORT_LIBRARY.find((r) => reportDate(r.file)) || REPORT_LIBRARY[0];
+    if (latest) {
+      lv.textContent = reportDate(latest.file) || "—";
+      ln.textContent = latest.company;
+    } else {
+      lv.textContent = "—";
+      ln.textContent = "No reports yet / 暂无报告";
+    }
+  }
 }
 
 // ------------------------------------------------- display language
@@ -716,8 +768,17 @@ async function onRunClick() {
 }
 
 // ------------------------------------------------- init
+/** The tab bar sticks under the app bar, whose height depends on the language
+ *  picker and the viewport. Measure it instead of hard-coding 59px. */
+function syncAppbarHeight() {
+  const bar = document.querySelector(".appbar");
+  if (bar) document.documentElement.style.setProperty("--appbar-h", `${Math.round(bar.getBoundingClientRect().height)}px`);
+}
+
 (async function init() {
   renderLangButtons();
+  syncAppbarHeight();
+  window.addEventListener("resize", syncAppbarHeight);
   document.addEventListener("click", (e) => {
     const b = e.target.closest(".langbtn");
     if (!b) return;
@@ -736,6 +797,7 @@ async function onRunClick() {
   const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({ models: [] }));
   APP_MODELS = cfg.models || [];
   renderModelOptions();
+  renderStatusCards();
   // Ask for cached state first, then probe once so the picker can label models
   // that need activation. The probe result is remembered server-side.
   refreshModelHealth().then((d) => {
@@ -743,13 +805,16 @@ async function onRunClick() {
   });
   $("sysstatus").addEventListener("click", toggleSystemStatus);
   document.addEventListener("click", (e) => {
-    if (!e.target.closest(".appbar-right")) $("statuspop").hidden = true;
+    if (!e.target.closest("#sysstatus, #statuspop")) $("statuspop").hidden = true;
     document.querySelectorAll(".acts details[open]").forEach((d) => {
       if (!d.contains(e.target)) d.open = false;
     });
   });
   const lib = $("libsearch");
   if (lib) lib.addEventListener("input", renderLibrary);
+  initLibrary();
+  loadDoneList();                       // status cards need the library on load
+  $("model").addEventListener("change", renderStatusCards);
   runBtn.addEventListener("click", onRunClick);
   $("usecache").addEventListener("click", () => start(true));
   $("refresh").addEventListener("click", () => start(false));
@@ -783,12 +848,20 @@ function setHTML(el, html) {
 
 function idx(company) { return batchItems.findIndex((x) => x.company === company); }
 
+function renderBatchSelCount() {
+  const el = $("batchselcount");
+  if (!el) return;
+  const n = batchItems.filter((i) => i.selected).length;
+  el.textContent = n ? `${n} of ${batchItems.length} selected / 已选 ${n} 家` : "";
+}
+
 function renderBatchTable() {
   const tb = document.querySelector("#batchtable tbody");
   if (!batchItems.length) {
     rowEls.clear();
     tb.innerHTML = '<tr><td colspan="9" class="empty">Upload a company list to begin.</td></tr>';
     tb.__empty = true;
+    renderBatchSelCount();
     return;
   }
   // The template ships a placeholder row; __empty is unset on the very first
@@ -847,6 +920,7 @@ function renderBatchTable() {
   for (const [company, tr] of [...rowEls.entries()]) {
     if (!seen.has(company)) { tr.remove(); rowEls.delete(company); }
   }
+  renderBatchSelCount();
 }
 
 function statusCell(it) {
@@ -870,6 +944,7 @@ function bindBatchTable() {
     if (!box) return;
     const i = idx(box.dataset.co);
     if (i >= 0) batchItems[i].selected = box.checked;
+    renderBatchSelCount();
   });
 }
 
@@ -1220,10 +1295,23 @@ function reportDate(file) {
   return m ? m[1] : "";
 }
 
-function renderLibrary() {
+/** Companies ticked in the report library. Selection is the library's own —
+ *  it is no longer borrowed from the batch table, where "Compile Selected"
+ *  used to read a selection the Reports tab never showed. */
+const librarySelection = new Set();
+
+function visibleLibraryRows() {
   const q = ($("libsearch") ? $("libsearch").value : "").trim().toLowerCase();
-  const rows = REPORT_LIBRARY.filter((r) =>
+  return REPORT_LIBRARY.filter((r) =>
     !q || (r.company || "").toLowerCase().includes(q) || (r.model || "").toLowerCase().includes(q));
+}
+
+function librarySelected() {
+  return REPORT_LIBRARY.filter((r) => librarySelection.has(r.company)).map((r) => r.company);
+}
+
+function renderLibrary() {
+  const rows = visibleLibraryRows();
   const count = $("libcount");
   if (count) {
     count.textContent = REPORT_LIBRARY.length
@@ -1233,22 +1321,113 @@ function renderLibrary() {
   $("donelist").innerHTML = rows.length
     ? rows.map((r) => {
         const url = languagePdfUrl(r.company);
-        return `<li>
-          <span class="co">${esc(r.company)}</span>
+        const co = esc(r.company);
+        const on = librarySelection.has(r.company);
+        const json = `/api/report/${encodeURIComponent(r.dir || safeDir(r.company))}/research.json`;
+        return `<li class="${on ? "sel" : ""}">
+          <input type="checkbox" class="libcb" data-co="${co}"${on ? " checked" : ""}
+                 aria-label="Select ${co}">
+          <span class="co">${co}</span>
           <span class="mt">${esc(r.model || "")}${reportDate(r.file) ? " · " + reportDate(r.file) : ""}</span>
-          <span class="sp">
-            <a class="abtn" href="${esc(url)}" data-pdf="${esc(url)}" data-pdftitle="${esc(r.company)}">View / 查看</a>
-            <a class="abtn" href="${esc(url)}">Download / 下载</a>
+          <span class="sp acts">
+            <a class="abtn" href="${esc(json)}" target="_blank" rel="noopener">View / 查看</a>
+            <a class="abtn" href="${esc(url)}" data-pdf="${esc(url)}" data-pdftitle="${co}">PDF</a>
+            <details><summary>⋯</summary><div class="menu">
+              <a href="${esc(url)}">Download PDF / 下载PDF</a>
+              <button data-libact="refresh" data-co="${co}">Refresh / 刷新</button>
+              <div class="divider"></div>
+              <button data-libact="delete" data-co="${co}" class="del">Delete Report / 删除报告</button>
+            </div></details>
           </span></li>`;
       }).join("")
     : `<li class="empty">${REPORT_LIBRARY.length
         ? "No reports match that search. 未找到匹配的报告。"
         : "None yet. 暂无报告。"}</li>`;
+  syncLibrarySelectionUI();
+}
+
+/** Reflect librarySelection onto the rows already on screen. No re-render. */
+function syncLibrarySelectionUI() {
+  document.querySelectorAll("#donelist .libcb").forEach((cb) => {
+    const on = librarySelection.has(cb.dataset.co);
+    if (cb.checked !== on) cb.checked = on;
+    cb.closest("li").classList.toggle("sel", on);
+  });
+  const n = librarySelected().length;
+  const sc = $("libselcount");
+  if (sc) sc.textContent = n ? `${n} selected / 已选 ${n} 份` : "";
 }
 
 async function loadDoneList() {
   REPORT_LIBRARY = await fetch("/api/reports").then((r) => r.json()).catch(() => []);
+  // Drop ticks for reports that no longer exist.
+  const live = new Set(REPORT_LIBRARY.map((r) => r.company));
+  [...librarySelection].forEach((c) => { if (!live.has(c)) librarySelection.delete(c); });
   renderLibrary();
+  renderStatusCards();
+}
+
+/** Report-library actions. Bound once; the list is re-rendered wholesale. */
+function initLibrary() {
+  const list = $("donelist");
+  if (!list) return;
+  list.addEventListener("change", (e) => {
+    const cb = e.target.closest(".libcb");
+    if (!cb) return;
+    if (cb.checked) librarySelection.add(cb.dataset.co);
+    else librarySelection.delete(cb.dataset.co);
+    syncLibrarySelectionUI();
+  });
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-libact]");
+    if (!b) return;
+    const co = b.dataset.co;
+    b.closest("details").open = false;
+    if (b.dataset.libact === "delete") {
+      if (!confirm(`Delete the saved report for ${co}?\n\n`
+                 + `删除 ${co} 的已保存报告？`)) return;
+      deleteReports([co]).then((n) => { if (n) toast("✓ Report deleted / 已删除报告"); });
+      return;
+    }
+    if (b.dataset.libact === "refresh") {
+      if (!confirm(`Refresh research for ${co}?\n\n`
+                 + `This makes a new AI research call and consumes tokens.\n`
+                 + `这将发起新的 AI 研究请求并消耗 tokens。`)) return;
+      const existing = REPORT_LIBRARY.find((r) => r.company === co);
+      runRow({ company: co, website: "", selected: true, status: "Pending",
+               pdfs: [], model: existing ? existing.model : null }, false);
+      toast("Refreshing… see Batch Research for progress / 刷新中，进度见批量研究");
+    }
+  });
+
+  $("libselall").addEventListener("click", () => {
+    visibleLibraryRows().forEach((r) => librarySelection.add(r.company));
+    syncLibrarySelectionUI();
+  });
+  $("libselnone").addEventListener("click", () => { librarySelection.clear(); syncLibrarySelectionUI(); });
+
+  $("libdelsel").addEventListener("click", () => {
+    const targets = librarySelected();
+    const bar = $("libconfirm");
+    if (!targets.length) {
+      bar.hidden = false;
+      bar.innerHTML = "<span>Select at least one report. <span class=\"cn\">请至少选择一份报告。</span></span>";
+      return;
+    }
+    bar.hidden = false;
+    bar.innerHTML = `<span>⚠ Delete ${targets.length} saved report${targets.length === 1 ? "" : "s"}?`
+      + `<span class="cn">删除 ${targets.length} 份已保存报告？</span></span>`
+      + `<button id="libcancel" class="mini ghost">Cancel / 取消</button>`
+      + `<button id="libok" class="mini danger">Delete ${targets.length} / 删除</button>`;
+    $("libcancel").onclick = () => { bar.hidden = true; };
+    $("libok").onclick = () => {
+      bar.hidden = true;
+      deleteReports(targets).then((n) => {
+        librarySelection.clear();
+        if (n) toast(`✓ ${n} report${n === 1 ? "" : "s"} deleted / 已删除 ${n} 份报告`);
+      });
+    };
+  });
 }
 
 /* Merge one sub-batch's rows back into the table by company name. A per-company
@@ -1414,15 +1593,15 @@ function remapItems() {
 
 // -------------------------------------------------- combined portfolio PDF
 async function compileReports(onlySelected) {
-  const out = $("compileout");
+  // Compile Selected belongs to the report library, so it reads the library's
+  // ticks and reports back beside its own button.
+  const out = onlySelected ? $("libout") : $("compileout");
   const order = $("order").value;
-  const companies = onlySelected
-    ? batchItems.filter((i) => i.selected && ["Completed", "Skipped"].includes(i.status)).map((i) => i.company)
-    : null;
-  if (onlySelected && (!companies || !companies.length)) {
+  const companies = onlySelected ? librarySelected() : null;
+  if (onlySelected && !companies.length) {
     out.hidden = false;
     out.style.color = "var(--err)";
-    out.textContent = "Select at least one completed company. / 请至少选择一家已完成的公司。";
+    out.textContent = "Select at least one report. / 请至少选择一份报告。";
     return;
   }
   out.hidden = false;

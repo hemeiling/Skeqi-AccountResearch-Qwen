@@ -27,11 +27,14 @@ never logged, never returned to the browser and never written to a report.
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.apollo.io/api/v1"
 TIMEOUT = 25
 PER_PAGE = 100                 # one page is enough for a decision-maker shortlist
+# Tried in order; 404/422 means "this tenant/API version does not have it".
+PEOPLE_SEARCH_PATHS = ("/mixed_people/api_search", "/mixed_people/search", "/people/search")
 BULK_MATCH_BATCH = 10          # Apollo's documented maximum per bulk_match call
 DEFAULT_ENRICH_LIMIT = 12      # "top 8-15 useful contacts"; override APOLLO_ENRICH_LIMIT
 
@@ -91,7 +94,10 @@ def new_usage():
 def _request(path, key, usage, method="GET", body=None, params=None):
     url = API_BASE + path
     if params:
-        import urllib.parse
+        # NO local import here. `import urllib.parse` inside this function made
+        # `urllib` a LOCAL name for the whole body, so every call that skips this
+        # branch — i.e. every POST: people search and bulk enrichment — hit
+        # UnboundLocalError at `urllib.request` below and returned 0 results.
         url += "?" + urllib.parse.urlencode(params)
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={
@@ -271,11 +277,15 @@ def search_people(company, domain, cfg, usage=None):
             body["organization_ids"] = [org["id"]]
         elif domain:
             body["q_organization_domains_list"] = [domain]
-        status, data = _request("/mixed_people/search", key, usage, method="POST", body=body)
-        usage["search_calls"] += 1
-        if status == 404:                       # older/newer tenants expose /people/search
-            status, data = _request("/people/search", key, usage, method="POST", body=body)
+        # Apollo retired /mixed_people/search and answers it with 422 pointing at
+        # mixed_people/api_search. The old paths are kept as fallbacks so a tenant
+        # still on them keeps working; 404 and 422 both mean "try the next one".
+        status, data = None, None
+        for path in PEOPLE_SEARCH_PATHS:
+            status, data = _request(path, key, usage, method="POST", body=body)
             usage["search_calls"] += 1
+            if status not in (404, 422):
+                break
         if status != 200:
             usage["status"] = "search_failed"
             usage["errors"].append("Apollo people search returned {}: {}".format(

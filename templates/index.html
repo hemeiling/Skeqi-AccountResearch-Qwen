@@ -16,6 +16,20 @@
       <span class="cn">思客琦客户洞察与销售研究</span></p>
   </div>
   <div class="appbar-right">
+    <!-- The ONE report-language control for the whole workspace. Single Company,
+         Batch Research, Reports and the PDF viewer all read this same value. -->
+    <div class="langpick">
+      <div class="langpick-text">
+        <span class="langlabel">Report Language / 报告语言</span>
+        <span class="langhelp">Controls report display and PDF export
+          <span class="cn">控制报告显示及 PDF 导出语言</span></span>
+      </div>
+      <div class="langbtns" data-langgroup>
+        <button class="langbtn" data-lang="en">English</button>
+        <button class="langbtn" data-lang="zh">中文</button>
+        <button class="langbtn" data-lang="bilingual">Bilingual</button>
+      </div>
+    </div>
     <button id="sysstatus" class="mini ghost">System Status <span class="cn">系统状态</span></button>
     <div id="statuspop" class="statuspop" hidden></div>
   </div>
@@ -30,9 +44,29 @@
 <main>
   <!-- ===================================================== Single Company -->
   <section id="mode-single">
+    <!-- Workspace status, built entirely from data the page already fetched:
+         /api/models/health, /api/config and /api/reports. No extra AI calls. -->
+    <div class="statcards">
+      <div class="statcard">
+        <span class="sc-k">Model / Connection <span class="cn">模型 / 连接</span></span>
+        <span class="sc-v" id="sc-model">—</span>
+        <span class="sc-m" id="sc-modelnote">Checking… 检测中…</span>
+      </div>
+      <div class="statcard">
+        <span class="sc-k">Saved Reports <span class="cn">已保存报告</span></span>
+        <span class="sc-v" id="sc-reports">—</span>
+        <span class="sc-m" id="sc-reportsnote">In the report library / 报告库中</span>
+      </div>
+      <div class="statcard">
+        <span class="sc-k">Last Generated <span class="cn">最近生成</span></span>
+        <span class="sc-v" id="sc-last">—</span>
+        <span class="sc-m" id="sc-lastnote">No reports yet / 暂无报告</span>
+      </div>
+    </div>
+
     <section class="panel">
       <div class="cardhd"><h2>Research a Company <span class="cn">研究单个公司</span></h2></div>
-      <div class="form">
+      <div class="form form-aligned form-2up">
         <div class="field">
           <label for="company">Company Name / 公司名称</label>
           <input id="company" type="text" value="SKEQI" placeholder="SKEQI" autocomplete="off">
@@ -45,15 +79,10 @@
           <label for="model">Model / 模型</label>
           <select id="model"></select>
         </div>
-        <div class="field">
-          <label>Report Language / 报告语言</label>
-          <div class="langbtns" data-langgroup>
-            <button class="langbtn" data-lang="en">English</button>
-            <button class="langbtn" data-lang="zh">中文</button>
-            <button class="langbtn" data-lang="bilingual">Bilingual</button>
-          </div>
-        </div>
+        <!-- The action column carries an empty label so the button's top edge
+             lines up with the inputs rather than sitting a label-height lower. -->
         <div class="actions">
+          <span class="lblspacer" aria-hidden="true"></span>
           <button id="run" class="primary">Generate Research <span class="cn">生成研究报告</span></button>
         </div>
         <div id="cachebar" class="cachebar" hidden>
@@ -71,14 +100,6 @@
 
     <div class="layout" style="margin-top:16px">
       <section class="panel results" id="results" hidden>
-        <div class="langbar">
-          <span class="langlabel">Display Language / 显示语言</span>
-          <div class="langbtns" data-langgroup>
-            <button class="langbtn" data-lang="en">English</button>
-            <button class="langbtn" data-lang="zh">中文</button>
-            <button class="langbtn" data-lang="bilingual">Bilingual / 双语</button>
-          </div>
-        </div>
         <div class="tabs" id="tabs"></div>
         <div id="report" class="report"></div>
         <div id="meta" class="meta"></div>
@@ -104,48 +125,54 @@
         <span class="hint">Companies are processed one at a time; reports save as each finishes.
           <span class="cn">逐家处理，每家完成后立即保存报告。</span></span>
       </div>
-      <div class="form">
-        <div class="field">
-          <label for="batchfile">Company List / 公司列表 <span class="opt">.xlsx / .csv</span></label>
-          <input id="batchfile" type="file" accept=".csv,.xlsx,.xlsm">
-        </div>
-        <div class="field">
-          <label for="batchmodel">Model / 模型</label>
-          <select id="batchmodel"></select>
-        </div>
-        <div class="field">
-          <label for="colname">Company Column / 公司名称列</label>
-          <select id="colname"></select>
-        </div>
-        <div class="field">
-          <label for="colsite">Website Column / 官网列</label>
-          <select id="colsite"></select>
-        </div>
-        <div class="field">
-          <label>Report Language / 报告语言</label>
-          <div class="langbtns" data-langgroup>
-            <button class="langbtn" data-lang="en">English</button>
-            <button class="langbtn" data-lang="zh">中文</button>
-            <button class="langbtn" data-lang="bilingual">Bilingual</button>
+      <!-- Batch Research is three explicit areas: what to run on, how to run
+           it, and what to do with the results. Destructive actions stay right. -->
+      <div class="group">
+        <div class="grouphd">Setup <span class="cn">设置</span></div>
+        <div class="form form-aligned form-2up">
+          <div class="field">
+            <label for="batchfile">Company List / 公司列表 <span class="opt">.xlsx / .csv</span></label>
+            <input id="batchfile" type="file" accept=".csv,.xlsx,.xlsm">
           </div>
-        </div>
-        <div class="field" style="justify-content:end">
-          <label class="chk"><input type="checkbox" id="useexisting" checked>
-            Skip companies that already have a report
-            <span class="cn">跳过已有报告的公司</span></label>
+          <div class="field">
+            <label for="batchmodel">Model / 模型</label>
+            <select id="batchmodel"></select>
+          </div>
+          <div class="field">
+            <label for="colname">Company Column / 公司名称列</label>
+            <select id="colname"></select>
+          </div>
+          <div class="field">
+            <label for="colsite">Website Column / 官网列</label>
+            <select id="colsite"></select>
+          </div>
+          <div class="fieldwide">
+            <label class="chk"><input type="checkbox" id="useexisting" checked>
+              Skip companies that already have a report
+              <span class="cn">跳过已有报告的公司</span></label>
+          </div>
         </div>
       </div>
 
-      <div class="actionbar" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2)">
-        <button id="runselected" class="primary">Generate Selected <span class="cn">生成选中公司</span></button>
-        <button id="runall" class="mini">Generate All / 生成全部</button>
-        <button id="retryfailed" class="mini">Retry Failed / 重试失败项</button>
-        <button id="stopbatch" class="mini del" hidden>Stop Batch / 停止批量</button>
-        <span class="sep"></span>
-        <button id="selectall" class="linkbtn">Select All / 全选</button>
-        <button id="selectnone" class="linkbtn">Clear Selection / 清除选择</button>
-        <span class="spacer"></span>
-        <button id="deletesel" class="mini del">Delete Selected Reports / 删除选中报告</button>
+      <div class="group">
+        <div class="grouphd">Generation <span class="cn">生成</span></div>
+        <div class="actionbar">
+          <button id="runselected" class="primary">Generate Selected <span class="cn">生成选中公司</span></button>
+          <button id="runall" class="mini">Generate All / 生成全部</button>
+          <button id="retryfailed" class="mini">Retry Failed / 重试失败项</button>
+          <button id="stopbatch" class="mini del" hidden>Stop Batch / 停止批量</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="grouphd">Selection &amp; Management <span class="cn">选择与管理</span></div>
+        <div class="actionbar">
+          <button id="selectall" class="mini">Select All / 全选</button>
+          <button id="selectnone" class="mini">Clear Selection / 清除选择</button>
+          <span id="batchselcount" class="selcount"></span>
+          <span class="spacer"></span>
+          <button id="deletesel" class="mini del">Delete Selected Reports / 删除选中报告</button>
+        </div>
       </div>
       <div id="bulkconfirm" class="bulkconfirm" hidden></div>
       <p id="batcherror" class="error" hidden style="margin-top:12px"></p>
@@ -176,6 +203,21 @@
           <span class="hint" id="libcount"></span>
         </div>
         <input id="libsearch" class="libsearch" type="search" placeholder="Search reports / 搜索报告…" autocomplete="off">
+        <!-- Same three-part grammar as Batch Research: select, act, then the
+             destructive action alone on the right. -->
+        <div class="group">
+          <div class="grouphd">Selection &amp; Management <span class="cn">选择与管理</span></div>
+          <div class="actionbar">
+            <button id="libselall" class="mini">Select All / 全选</button>
+            <button id="libselnone" class="mini">Clear Selection / 清除选择</button>
+            <span id="libselcount" class="selcount"></span>
+            <span class="spacer"></span>
+            <button id="compilesel" class="mini">Compile Selected / 汇总选中报告</button>
+            <button id="libdelsel" class="mini del">Delete Selected / 删除选中报告</button>
+          </div>
+          <div id="libconfirm" class="bulkconfirm" hidden></div>
+          <p id="libout" class="compileout" hidden></p>
+        </div>
         <ul id="donelist" class="liblist"><li class="empty">None yet. <span class="cn">暂无报告。</span></li></ul>
       </section>
 
@@ -191,17 +233,10 @@
             </select>
           </div>
           <button id="compileall" class="primary">Compile Completed Reports <span class="cn">汇总已完成报告</span></button>
-          <div class="row">
-            <button id="compilesel" class="mini">Compile Selected / 汇总选中报告</button>
-            <button id="zipbtn" class="mini">Download ZIP / 下载ZIP</button>
-          </div>
+          <button id="zipbtn" class="mini">Download ZIP / 下载ZIP</button>
           <p id="compileout" class="compileout" hidden></p>
-        </div>
-        <h2>Export Language <span class="cn">导出语言</span></h2>
-        <div class="langbtns" data-langgroup>
-          <button class="langbtn" data-lang="en">English</button>
-          <button class="langbtn" data-lang="zh">中文</button>
-          <button class="langbtn" data-lang="bilingual">Bilingual</button>
+          <p class="hint">Exports use the Report Language chosen in the header.
+            <span class="cn">导出语言由页首的报告语言决定。</span></p>
         </div>
       </aside>
     </div>
@@ -217,11 +252,6 @@
         <span class="lab">Report Preview / 报告预览</span>
         <span id="pdftitle" class="pdftitle"></span>
       </span>
-      <div class="langbtns" data-langgroup>
-        <button class="langbtn" data-lang="en">English</button>
-        <button class="langbtn" data-lang="zh">中文</button>
-        <button class="langbtn" data-lang="bilingual">Bilingual</button>
-      </div>
       <span class="pdfbtns">
         <a id="pdfnewtab" class="mini ghost" href="#" target="_blank" rel="noopener">Open Full Screen / 全屏</a>
         <a id="pdfdownload" class="mini ghost" href="#">Download / 下载</a>

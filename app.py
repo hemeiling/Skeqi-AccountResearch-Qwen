@@ -114,7 +114,7 @@ def save_run(package, run):
     return record
 
 
-def worker(job_id, company, website, models, use_cache, force=False):
+def worker(job_id, company, website, models, use_cache, force=False, known_contacts=None):
     t_wall = time.time()
 
     def progress(stage, message, **extra):
@@ -133,7 +133,8 @@ def worker(job_id, company, website, models, use_cache, force=False):
             progress("cache", "Using cached web research ({} sources, {}s old)".format(
                 len(package["sources"]), package.get("age_seconds", 0)))
         else:
-            package = rs.build_shared_evidence(company, website, cfg, progress)
+            package = rs.build_shared_evidence(company, website, cfg, progress,
+                                               known_contacts=known_contacts)
 
         quality = package.get("quality", {})
         update(job_id, lambda j: j.update(
@@ -290,6 +291,8 @@ def api_research():
     company = (body.get("company") or "").strip()
     website = (body.get("website") or "").strip()
     choice = (body.get("model") or "").strip()
+    # Contacts the CRM already holds, attached by its proxy. Never required.
+    known_contacts = body.get("known_contacts") or []
     use_cache = bool(body.get("use_cache"))
     force = bool(body.get("force"))          # explicit "Generate Anyway"
     if not company:
@@ -313,7 +316,8 @@ def api_research():
             "model_order": models,
         }
     threading.Thread(target=worker,
-                     args=(job_id, company, website, models, use_cache, force),
+                     args=(job_id, company, website, models, use_cache, force,
+                           known_contacts),
                      daemon=True).start()
     return jsonify({"job_id": job_id})
 

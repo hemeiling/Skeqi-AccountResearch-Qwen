@@ -3,7 +3,228 @@
 > Last updated: 2026-09-02
 > Updated by: Claude
 > Current phase: Deployment PREPARED and pre-flight verified; deploy itself needs your Render account
-> Overall status: DEGRADED — DashScope account has no model entitlement (403 AccessDenied)
+> Latest change: standalone-engine UI organization pass (presentation only, 2026-09-02)
+> Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
+
+---
+
+## 0. MODEL STATUS — verified live 2026-09-03
+
+| Model | State |
+|---|---|
+| `qwen3.6-flash` | **available** |
+| `deepseek-v4-pro` | **available** |
+| `deepseek-v4-flash-0731` | **available** |
+
+`GET /api/models/health?probe=1` returned `available` for all three.
+
+> ### ⚠ Research runs are LIVE and cost money
+>
+> Generate, Regenerate, Refresh and Batch now call the model for real and **may
+> consume paid tokens**. Regenerate/Refresh also **replace** the saved report.
+> **Do not run them merely to test.** Only on explicit request.
+
+The earlier 403 `AccessDenied.Unpurchased` state is **resolved**. Sections below
+that describe it — the ACCEPTED entry in Known Issues, the roadmap line, the
+handoff blockers — are kept only as the record of what *was* true and how the
+application handles a withdrawal of access. The bilingual *Model unavailable —
+activation/payment required* string remains in the UI as the **guard** for that
+case; it is not a statement about today.
+
+---
+
+## 0a. APOLLO STATUS — verified live 2026-09-03
+
+| | |
+|---|---|
+| Key source | **`ai_credentials.env`** (local, git-ignored, mode 600) |
+| Environment variable | **`APOLLO_API_KEY`** |
+| Local status | **configured / tested** |
+| Render status | **PENDING** — must be added to the **engine** service's environment |
+
+`ai_credentials.env` is **not** deployed. On Render the same key has to be set as
+an environment variable on the engine service, exactly as `DASHSCOPE_API_KEY` is.
+Setting it on the CRM service does nothing: Apollo is called from the engine.
+
+**How the key resolves.** `apollo_service.api_key(cfg)` reads `cfg["APOLLO_API_KEY"]`
+first, then `os.environ`. `research_service.load_config()` merges every key from
+`ai_credentials.env` over the environment, so the file wins locally and real env
+vars work in production. Verified: `apollo.configured(cfg)` is `True`.
+
+**Connectivity check, 2026-09-03.** One `/organizations/enrich` call — no people
+search, no contact enrichment, no research run, no model call:
+
+| Check | Result |
+|---|---|
+| `configured` | ✅ true |
+| Auth | ✅ accepted, no 401/403 |
+| Resolution | ✅ `skeqi.com` → **SKEQI Intelligent Equipment**, matched by domain |
+| API calls | 1 |
+| Rate headers | `x-minute-requests-left: 999` of 1000 |
+| Errors | none |
+| Key in output | ✅ none — never printed, never logged, never persisted |
+
+**Status changed from `not_configured` to configured/available.** The earlier
+Manz AG run reported `not_configured` correctly: `ai_credentials.env` was modified
+at **19:18:21**, three minutes *after* that run finished at 19:15.
+
+**Enrichment path.** `research_service` calls `apollo.configured(cfg)` and, when
+true, runs search → rank → enrich, all with the same `cfg`, so the path is wired
+to this key. Note the enrichment cap is **`DEFAULT_ENRICH_LIMIT = 12`**, not 20 —
+search returns up to `PER_PAGE = 100` candidates, ranking keeps the relevant ones,
+and only the top 12 are enriched, because enrichment is the credit spend. Override
+with `APOLLO_ENRICH_LIMIT`. **Not changed here** — say so if you want 20.
+
+**Secret hygiene.** The key is sent only as the `x-api-key` request header, which
+`_request` marks "never logged". It is absent from the frontend, from reports and
+PDFs, from Neon records, from `STATUS.md` and from every commit.
+`ai_credentials.env` remains git-ignored.
+
+---
+
+## 0b. Unsupported claims are omitted, not announced — 2026-09-03
+
+Per instruction: a claim without evidence should **not appear**, rather than
+appear as a *Not enough evidence / 证据不足* line. `confidence.py` already filtered
+these; two gaps let some through.
+
+1. **Malformed badges survived.** Models emit unclosed or doubled tags such as
+   `**Not enough evidence / 证据不足. **Not enough evidence**`. The stripper matched
+   only the exact spelling and left `Not enough evidence**` visible.
+   `_TAG_LOOSE` now sweeps any remnant and tidies the stray asterisks.
+2. **Long absence prose survived.** `is_placeholder` dropped a line only when its
+   residue was under 30 characters, so *"Direct competitor names, product ranges,
+   capacity comparisons … are not disclosed in the provided evidence"* was kept
+   for being wordy. `is_absence_only` now tests what the words **mean**.
+3. **Absence written as prose, mid-line.** Some lines mix an absence clause with
+   real sourced findings. `prune_absence_sentences` removes the unit of meaning —
+   the **sentence** — never the whole line.
+
+**The guard against over-deletion:** a sentence is always kept when it carries a
+citation `[n]` or a *Verified / 已验证* or *Likely / 可能* badge. A caveat inside a
+sourced finding is not filler: *"Revenue was EUR 200m, though the split is not
+disclosed [3]"* survives intact.
+
+Display and PDF share this path (`pdf_service` calls `conf.strip_unsupported`),
+so both agree. **The stored record is untouched** — the tags remain in
+`research_result` and in the `confidence` counts; only the reading view drops them.
+
+**Verified against all 30 stored reports:** tagged occurrences **2,288 → 0**, no
+section lost in any report, and Eclipse Automation keeps its sourced findings and
+badges. Prompt, retrieval and model routing were not changed.
+
+---
+
+## 0c. Contacts — bug fixes, CRM-first reuse, buying-centre ranking (2026-09-04)
+
+### Two bugs that made Apollo return nobody
+
+**1. `UnboundLocalError` on every POST.** `apollo_service._request` had
+`import urllib.parse` *inside* the function while `urllib.request` was imported at
+module level, which makes `urllib` a **local** name for the whole body. Every path
+that skips the `params` branch — i.e. **every POST: people search and bulk
+enrichment** — raised `UnboundLocalError` before a request was sent. The generic
+handler reported it as "0 candidates". Organisation lookup kept working because it
+is a GET with params, which is why a connectivity check on that path alone proved
+nothing about search.
+
+Fixed: `urllib.parse` is imported at module level, and the local import is gone.
+**Never re-add it** — the shadowing is silent and total.
+
+**2. The people-search endpoint is retired.** With (1) fixed Apollo answered
+**422**: *use `mixed_people/api_search`*. `search_people` now walks
+`PEOPLE_SEARCH_PATHS` — the new path first, the two older ones as fallbacks —
+treating **404 and 422** alike as "not on this tenant".
+
+Live check after both fixes, one search, **0 credits**:
+`status ok · 100 returned · 94 after ranking`.
+
+### CRM contacts are used before Apollo
+
+Source priority is **CRM → official/web → Apollo**. Apollo fills gaps.
+
+- The CRM proxy attaches its own contacts to `POST /api/research` as
+  `known_contacts`; the engine threads them through `worker()` into
+  `build_shared_evidence(..., known_contacts=...)`.
+- `people_service.from_crm()` scores them with the same ruleset used for Apollo.
+- **Apollo is skipped entirely** when the CRM already yields `enrich_limit`
+  relevant contacts (`apollo_usage.status = "skipped_crm_sufficient"`).
+- Running the engine standalone simply receives none and behaves as before.
+
+### Dedupe by real identity
+
+`identity_keys()` returns every key a person can be recognised by, strongest
+first, and two records merge if **any** key matches:
+
+1. `email:` exact, lowercased
+2. `li:` LinkedIn profile, protocol/`www.`/query stripped
+3. `name:` normalised first+last **plus normalised company**
+
+The company is part of the name key on purpose: *Jim Farley* at two different
+companies is two people. Legal suffixes are stripped, so *Ford Motor Company* and
+*Ford Motor Co., Ltd.* are the same company.
+
+**A CRM email always wins over Apollo**, and a CRM title beats an Apollo one.
+**No email is ever invented**: a contact without one keeps an empty address and
+the CRM's own `not_checked` / `not_available` status.
+
+### Ranking: a buying centre, not a list of manufacturing titles
+
+The ruleset kept its **high-priority band unchanged** — manufacturing, operations,
+plant leadership, procurement, strategic sourcing, supply chain, automation and
+controls, equipment and process engineering, battery/EV/energy storage, digital
+manufacturing all still score 69–100.
+
+What changed is that roles which **influence, specify, evaluate, fund or approve**
+a purchase are no longer scored 0 and dropped. A **second band at 40–58** was
+added *below* every core role, so they rank lower unless the title says otherwise:
+
+| Band | Score | Examples |
+|---|---|---|
+| Program leadership | 58 | launch / industrialisation programme owners |
+| Business-unit leadership | 56 | GM, division, segment, country manager |
+| Finance leadership | 55 | CFO, Finance Director, VP Finance, Controller |
+| Innovation / R&D | 52 | R&D Director, Head of Innovation |
+| Engineering (IC) | 50 | engineers not already matched higher |
+| Quality | 46 | quality/QA/QC roles |
+| Technology | 44 | technology, digital, controls, IT leads |
+| Maintenance / Reliability | 42 | uptime and spare-part owners |
+| Supply chain (broad) | 40 | supplier, vendor, sourcing, purchasing |
+
+Two matching fixes went with it: `engineer` now matches alongside `engineering`
+(so *Battery Manufacturing Engineer* scores 72, not 0), and the finance rule
+handles both word orders (*Finance Director* and *Director of Finance*).
+
+**Exclusions are unchanged.** Assistants, recruiters, HR, comms, reception and
+similar still score 0 and never reach the roster.
+
+**Roster diversity.** Ford's CRM record holds eighteen battery manufacturing
+engineers; on score alone they filled all twenty slots and pushed out the plant,
+finance and programme people. `merge()` now applies `_PER_DEPARTMENT_CAP = 4` on a
+first pass and backfills the remaining slots by score, then re-sorts. A company
+with only one kind of contact still returns a full list.
+
+Real Ford CRM data, Top 20: Executive Leadership 2 · Battery Engineering 8 ·
+Digital Manufacturing 4 · Finance Leadership 4 · Engineering 1 · Innovation 1.
+Under the old ruleset only **6 of 40** rows survived at all.
+
+A CRM placeholder (`N/A`, `-`, `none`) is treated as an empty field, so the
+ruleset's own department is used instead of printing "N/A" in the roster.
+
+### Verified 2026-09-04 — no paid research run
+
+| Check | Result |
+|---|---|
+| Both Apollo call shapes reach the network | ✓ no `UnboundLocalError` |
+| Live people search | ✓ 100 returned, 94 ranked, **0 credits** |
+| Core roles keep their scores | ✓ 69–100 unchanged |
+| Second band no longer scores 0 | ✓ CFO 55, R&D 52→55, Program 58, IC engineer 50 |
+| Exclusions still dropped | ✓ assistant, recruiter, social media, reception = 0 |
+| Dedupe by email / LinkedIn / name+company | ✓ incl. same name at different companies kept apart |
+| CRM email and title beat Apollo | ✓ |
+| No invented emails | ✓ |
+| Roster is a buying centre | ✓ 6 departments in the Top 20 |
+| All 30 stored reports still parse and merge | ✓ 0 failures |
 
 ---
 
@@ -169,6 +390,60 @@ correct way to add a status label — never change the value.
 Server-side progress messages (`Reading 14 source pages…`) remain English: they are emitted by
 `research_service`, which is out of scope for a presentation change.
 
+### UI organization pass — 2026-09-02 (presentation only)
+
+Applies to the **standalone engine UI** (`templates/index.html`, `static/style.css`,
+`static/app.js`). The CRM copy of this workspace is a separate repository and is
+**not present on this machine**, so none of the following is in the CRM yet.
+
+**One report-language control.** The app bar owns the only `[data-langgroup]` on the
+page: label, muted helper line and the segmented control grouped in `.langpick`.
+The four duplicates are gone — single-company form, batch form, the Reports
+sidebar's "Export Language", and the PDF viewer bar. Behaviour is unchanged: one
+`localStorage` value, delegated `.langbtn` click handler, no per-language storage.
+**Do not reintroduce a second language control.**
+
+**Tabs.** `.mode.active` is now a filled brand-purple pill with white text; inactive
+tabs are muted with a brand-soft hover. The active `.cn` half is `#e5dcf3` so it
+reads on purple.
+
+**Aligned two-up forms.** Single Company and Batch Setup share `.form-aligned
+.form-2up`: a **fixed 17px label row** above a control of `--ctl-h:36px`, two equal
+columns from 721px, one column below. The action column has no label, so it carries
+an empty 17px `.lblspacer` — that spacer is what makes the Generate button start at
+the same y as the inputs. `optional / 可选` is a muted inline badge, not a second
+label line. Measured: Company Name and Company Website share one top; Model and
+Generate share the next; all four are 36px.
+
+**Three status cards** (`.statcards`) head the Single Company tab: Model /
+Connection, Saved Reports, Last Generated. Every value is derived from responses
+the page already makes — `/api/config`, `/api/models/health`, `/api/reports`.
+**No new endpoint and no AI call.** `renderStatusCards()` re-runs on model change,
+on health refresh and after `loadDoneList()`.
+
+**Batch Research** is three labelled areas: Setup (Company List | Model, then
+Company Column | Website Column, then the skip-existing option), Generation
+(Generate Selected / All / Retry Failed / Stop), and Selection & Management
+(Select All / Clear Selection, count, then Delete Selected pushed right).
+
+**Reports** gained its own management: a checkbox per report, Select All / Clear
+Selection over the *filtered* rows, a live count, Compile Selected, Delete Selected,
+and per-row `View | PDF | ⋯` where ⋯ holds Download PDF, Refresh and Delete.
+View opens the saved `research.json`; PDF opens the embedded viewer.
+
+**Bug fixed by this pass:** "Compile Selected" used to compile the **batch table's**
+selection, which the Reports tab never displayed — clicking it there compiled
+whatever happened to be ticked in Batch Research. It now reads `librarySelection`,
+the report library's own set, and reports back beside its own button (`#libout`).
+
+**Selection is synced in place.** `syncLibrarySelectionUI()` toggles the checkbox
+and row class without rebuilding the list — same reason the batch table diffs rows
+rather than re-rendering. Do not replace it with a `renderLibrary()` call.
+
+**`--appbar-h`.** The tab bar sticks under the app bar, whose height now depends on
+the language picker. `syncAppbarHeight()` measures it on load and resize and writes
+the CSS variable. The old hard-coded `top:59px` is gone.
+
 **Preserved deliberately:** `renderBatchTable`'s in-place row diffing and its editing guard (the
 focus fix), `CELLS = 9`, every element id, every fetch, and all Python behaviour.
 
@@ -322,7 +597,7 @@ navigation, no System Status header.
 
 - **Reads come from Neon** via the Phase 2 API. The engine is consulted only to
   RUN research and to render a stored record, so the library, saved reports,
-  language switching and PDF export work while the models await activation.
+  language switching and PDF export keep working if model access is ever lost.
 - **Language selection stays server-side.** The standalone build mirrored the
   rules in JavaScript; here the view is requested per language and rendered from
   the one stored record, so there is no second copy to drift.
@@ -502,11 +777,13 @@ Verified working. Evidence:
 Web research extracts decision makers from official leadership pages and public web sources.
 Apollo supplements this with structured contact data for roles that are hard to find publicly.
 
-### Apollo integration: IMPLEMENTED — BLOCKED on a key for live verification
+### Apollo integration: IMPLEMENTED and LIVE locally (2026-09-03)
 
-`APOLLO_API_KEY` is **not present in `ai_credentials.env`** as of this update, so the live API
-has still never been called. Everything below is implemented and tested with the network hop
-mocked at `apollo_service._request`.
+`APOLLO_API_KEY` **is present in `ai_credentials.env`** and the live API has been called
+successfully — see §0a for the connectivity check. The description below was written while
+the key was absent and the network hop was mocked at `apollo_service._request`; the mechanics
+it documents are unchanged, only the "never called" status is superseded. **Render still needs
+the env var on the engine service.**
 
 ### Endpoints used
 
@@ -585,7 +862,7 @@ AI_REQUEST_TIMEOUT_MS
 AI_PRICE_INPUT_PER_1K      (optional)
 AI_PRICE_OUTPUT_PER_1K     (optional)
 AI_PRICE_CURRENCY          (optional)
-APOLLO_API_KEY             (optional — NOT YET PRESENT in ai_credentials.env)
+APOLLO_API_KEY             (optional — PRESENT locally; add to the Render ENGINE service)
 APOLLO_ENRICH_LIMIT        (optional — contacts enriched per company, default 12)
 AI_MODEL_FALLBACKS         (optional — extra model ids to try on 403 AccessDenied)
 APP_ACCESS_USERNAME        (access gate; gate is OFF unless both are set)
@@ -650,7 +927,7 @@ NEVER put actual key values in this file.
 - [x] **CRM tab integration** — two tabs, Current default, Previous unchanged
 - [ ] Deploy to Render and point `CURRENT_ACCOUNT_RESEARCH_URL` at it
 - [ ] Durable storage (Render Disk or object storage) — documented, not built
-- [ ] DashScope model activation — accepted as blocked, no action planned
+- [x] DashScope model activation — RESOLVED, all three models available 2026-09-03
 
 ---
 
@@ -695,7 +972,7 @@ Live app with **no** key configured: 0 Apollo calls, 5 web-sourced contacts, 0 e
 
 ## 12. Known Issues
 
-### ACCEPTED — DashScope models require paid activation
+### RESOLVED 2026-09-03 — was: DashScope models require paid activation
 All three configured models return HTTP **403 `AccessDenied.Unpurchased`**,
 *"Access to model denied. Please make sure you are eligible for using the model."*
 
@@ -710,7 +987,10 @@ All three configured models return HTTP **403 `AccessDenied.Unpurchased`**,
 Confirmed not Apollo (no DashScope dependency, different host and auth) and not a wrong model id
 (all three appear in the account's own catalog).
 
-**Decision: leave the models configured and blocked for now. No further action is required
+**Outcome: access was activated; all three models now probe as available. The text below
+records the state that HELD UNTIL 2026-09-03 and how the app degrades if access is lost again.**
+
+**Historic decision: leave the models configured and blocked for now. No further action was required
 unless billing / model access is enabled.** Do not spend time trying to repair or replace them.
 
 **How the app behaves meanwhile**
@@ -806,103 +1086,69 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Phase 3 — native Current Account Research workspace (2026-09-02).**
-Branch `account-research-qwen`, commit **`bc928b6`**. Not pushed.
+**Standalone-engine UI organization pass (2026-09-02). Presentation only.**
+No backend, research, retrieval, prompt, persistence or Apollo change. Files:
+`templates/index.html`, `static/style.css`, `static/app.js`.
 
-**Files changed**
+| Area | Change |
+|---|---|
+| Language | Four duplicate selectors collapsed into one grouped app-bar control with a helper line |
+| Tabs | Active tab is a filled brand-purple pill; inactive tabs quiet |
+| Single Company | Three status cards; Name \| Website then Model \| Generate, all controls aligned |
+| Batch Research | Setup / Generation / Selection & Management, destructive action right |
+| Reports | Checkboxes, Select All / Clear Selection, Compile Selected, Delete Selected, per-row View \| PDF \| ⋯ (Download, Refresh, Delete) |
+| Fix | Compile Selected read the batch table's selection; it now reads the library's own |
+| Fix | Library selection syncs in place instead of rebuilding 29 rows per tick |
+| Fix | `--appbar-h` measured at runtime; the tab bar no longer assumes a 59px app bar |
 
-| Repo | File | Change |
-|---|---|---|
-| CRM | `public/qwen-research.js` | **New, 633 lines.** The whole workspace |
-| CRM | `public/index.html` | Native markup for the Current pane + CRM-token styling |
-| CRM | `public/app.js` | Iframe path removed; native init on tab open |
-| CRM | `server.js` | Batch-upload proxy, portfolio/ZIP export from Neon |
-| CRM | `qwenResearch.js` | `recordsFor()` — canonical records for exports |
-| Engine | `app.py` | `POST /api/render-portfolio`, `POST /api/render-zip` (stateless) |
-
-**UI components ported:** single-company form (company, optional URL, model,
-language), report view with metadata grid, Key Contacts table, sources list,
-batch upload with column mapping, batch action bar, KPI cards, the data grid
-with in-place editing, report library with search, portfolio actions, and the
-embedded PDF preview. Markdown rendering, citation pills and confidence tags
-were ported and restyled onto CRM tokens.
-
-**Neon APIs used:** `GET /reports`, `GET /company/:company`, `GET /exists`,
-`POST /reports/delete`, `GET /render` (markdown + PDF),
-`POST /export/portfolio`, `POST /export/zip`, `GET /models/health`,
-plus the proxied `research`, `job`, `batch/*` routes.
-
-### VERIFIED
+### VERIFIED — headless Chromium against the running app, 2026-09-02
 
 | Check | Result |
 |---|---|
-| Current Account Research loads by default | `current` active on open |
-| No nested app chrome | Qwen iframe absent, no standalone appbar, no System Status |
-| Sub-tabs | Single Company 单个公司 · Batch Research 批量研究 · Reports 报告库 |
-| 29 existing reports visible | Library shows 29 / 29 |
-| English-only view | 19 headings, first "Executive Summary", 31 CJK chars |
-| Chinese-only view | 19 headings, first "执行摘要", 3,053 CJK chars |
-| Bilingual view | 19 headings, first "Executive Summary / 执行摘要" |
-| Metadata / contacts / sources | 6 metadata tiles, 4 contact rows, 9 sources |
-| PDF preview | Opens inline from `/api/aresearch/render?…&format=pdf` |
-| PDF download | Served through the same Neon-backed route |
-| Delete removes the intended Neon report | Library 29→28, Torus gone, Neon 28; restored to 29 |
-| Existing-report detection from Neon | ACRO / TE = Existing Report, ZZ New Co = Pending |
-| **Focus during polling** | Focus, text and caret all intact through re-renders |
-| Generate/Regenerate while blocked | "Model unavailable — activation/payment required / 模型暂不可用 — 需要开通/付费" |
-| Previous Account Research | Claude iframe loads, content unchanged |
-| Tab switching | Current → Previous → Current, no JS errors |
-| Claude tables unchanged | `account_reports` 12, `account_research_cache` 45 |
+| Exactly one language control, in the app bar | ✓ 1 `[data-langgroup]` |
+| Language choice persists and re-renders | ✓ `localStorage` = zh, buttons follow |
+| Active tab filled `#4F2582`, white text, one active | ✓ all three tabs |
+| Name / Website share a row; Model / Generate share the next | ✓ tops equal |
+| All four controls 36px | ✓ one distinct height |
+| Website label stays one line (17px) with the badge | ✓ 1440 / 1280 / 1100 |
+| Checkbox per report | ✓ 29 |
+| Select All / Clear Selection / live count | ✓ 29 selected, then 0 |
+| Selection survives searching and re-render | ✓ same two companies |
+| Compile Selected with nothing ticked | ✓ warns, no API call |
+| Compile Selected honours the global language | ✓ POST carried `"lang":"zh"` + the 2 ticked companies, 2-company PDF returned |
+| Per-row ⋯ contains Download / Refresh / Delete | ✓ not clipped |
+| View → saved `research.json`; PDF → embedded viewer | ✓ |
+| PDF viewer opens with no language control of its own | ✓ requested `lang=zh` |
+| Status cards populate | ✓ model + state, 29, 2026-09-02 |
+| Batch: three area headings, Delete Selected separated right | ✓ 1222px gap |
+| Console / page errors | ✓ none |
+| Horizontal overflow at 1440 / 1280 / 1100 / 420 | ✓ none |
 
-**Bug found and fixed:** the Delete button rendered "Delete 删除 删除" — the CRM's
-own i18n already translates "Delete", and a manual `i18n-zh` span duplicated it.
-My first duplicate detector missed it because `删除删除` scans as a single CJK
-token; a corrected detector now reports zero duplicates across all three tabs.
+**Test artifact:** the compile check wrote
+`reports/Selected_Companies_Account_Research_ZH_2026-09-02.pdf`. Harmless and
+regenerable with no AI tokens; delete it if unwanted.
 
-### Final pre-push verification (2026-09-02)
+### NOT DONE — needs the CRM repository
 
-Both services restarted clean, no startup errors, `APOLLO_API_KEY` absent.
+The user's requests referred to CRM-side chrome: the
+**Current Account Research (Qwen-based) / Previous Account Research (Claude-based)**
+tab pair, and matching the **Previous Claude page** as a visual reference.
+Neither is on this machine — a filesystem search for `qwen-research.js` and for
+the string "Current Account Research" in `.html` / `.js` outside `node_modules`
+returned nothing. So:
 
-| Area | Check | Result |
-|---|---|---|
-| Current | Default Account Research tab | ✓ |
-| Current | 29 Neon reports visible | ✓ 29 |
-| Current | English / 中文 / Bilingual | ✓ 19 sections each; cjk 31 / 3053 / 3295 |
-| Current | Report metadata | ✓ 6 tiles |
-| Current | Sources | ✓ 9 |
-| Current | Apollo / contact rendering from saved reports | ✓ 4 rows, with the Apollo key absent |
-| Current | PDF inline viewer | ✓ |
-| Current | PDF download | ✓ |
-| Current | Delete | ✓ 29→28, retrieve 404, restored to 29 |
-| Current | Edit Company / Edit URL | ✓ both save |
-| Current | Report library + search | ✓ |
-| Current | Combined PDF | ✓ 29-page, 690 KB, built from Neon |
-| Current | ZIP | ✓ 29 PDFs, 526 KB, built from Neon |
-| Previous | Loads unchanged | ✓ |
-| Previous | Still an iframe, untouched | ✓ |
-| Previous | Existing reports / tables unchanged | ✓ `account_reports` 12, cache 45 |
-| Models | 403 shown as activation/payment required | ✓ bilingual |
-| Models | Not misclassified as retrieval failure | ✓ |
-| UI | No duplicate bilingual labels | ✓ |
-| UI | No nested app shell/header | ✓ |
-| UI | No iframe for Current | ✓ |
-| UI | No console errors switching tabs | ✓ |
-| Data | Exactly one current report per company | ✓ 29 / 29, unique index present |
-| Repo | No credentials in code, commits or tracked files | ✓ `.env` ignored, diff clean |
-
-Branch diff vs `main`: **10 files, +1834 / −6**. The six deleted lines are the
-old Current-tab iframe path and the replaced script tag — nothing unrelated.
-
-### BLOCKED
-
-**Live new research.** DashScope returns 403 `AccessDenied.Unpurchased` on all
-three configured models. **Reason: model access requires paid activation.**
-Not a Phase 3 failure — everything was validated against the 29 existing Neon
-reports, and no research tokens were spent.
-
----
+- The outer Current/Previous tab pair was **not** restyled. Only the engine's own
+  Single Company / Batch Research / Reports bar was.
+- Card radius, borders, typography and content width were matched to **this app's**
+  existing tokens, not measured against the Claude page.
+- Every change above still has to be **ported into the CRM's `public/index.html`
+  and `public/qwen-research.js`**, in the repository that holds them.
 
 ## 15. Current Work In Progress
+
+**UI organization pass**
+Status: **IMPLEMENTED and TESTED in the standalone engine**, uncommitted.
+**NOT STARTED in the CRM** — that repository is not on this machine.
 
 **Phases 1–3 — CRM integration**
 Status: **COMPLETE and verified.** Neon persistence, proxy, and a native
@@ -913,19 +1159,20 @@ Status: PREPARED, NOT DEPLOYED. See `DEPLOY.md`. Note Phase 1 removes the worst
 consequence of ephemeral disk for *completed* reports once Phase 2 writes new
 runs to Neon; today only the migrated history is durable.
 
-**DashScope model activation** — accepted as blocked, requires paid activation.
-**Apollo** — implemented, `APOLLO_API_KEY` still absent.
+**DashScope model activation** — RESOLVED 2026-09-03; all three models available.
+**Apollo** — implemented and live locally; see §0a. Render env var still pending.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. **Review the pushed branch** and open a PR when ready
+1. **Port the UI organization pass into the CRM** (`public/index.html`,
+   `public/qwen-research.js`) — that repository is not on this machine, so the
+   Current/Previous tab pair and the Claude-page visual match are still open.
+2. **Review the pushed branch** and open a PR when ready
    (`account-research-qwen`, 5 commits, `main` untouched).
-2. When model access is activated, run one live company end-to-end to confirm
+3. When model access is activated, run one live company end-to-end to confirm
    new research → Neon upsert and regenerate → safe replacement.
-3. Archive `reports/*/history/` (35 JSON + 35 PDFs, 3.7 MB) — superseded runs,
-   deliberately not in Neon.
 4. Deploy both services to Render per `DEPLOY.md`, setting `APP_SERVICE_KEY` on
    the engine and `ACCOUNT_RESEARCH_SERVICE_KEY` on the CRM to the same value.
 5. Add `APOLLO_API_KEY` and verify Apollo live.
@@ -958,37 +1205,46 @@ runs to Neon; today only the migrated history is durable.
 - Do not set `frame-ancestors *`; keep it to the approved CRM origin.
 - Do not connect this app's data to the CRM. The integration is navigation only.
 - Do not split arbitrary "A / B" text in report bodies; brand names legitimately contain it.
+- Do not add a second report-language control. The app bar owns the only one.
+- Do not re-render the whole report library on a checkbox tick; use
+  `syncLibrarySelectionUI()`.
+- Do not let "Compile Selected" read the batch table again; it is the library's
+  own selection.
+- Do not hard-code the tab bar's sticky offset; it follows `--appbar-h`.
+- Do not give `.liblist` a scroll container again — it clips the per-row ⋯ menu.
 
 ---
 
 ## 18. Session Handoff
 
 **Last successful operation:**
-Verified the native Current Account Research workspace in a real browser: default
-tab, 29 reports from Neon, all three language views, PDF preview and download,
-delete and restore, existing-report detection, focus retention during polling,
-the activation message on Generate, and the Claude tab unchanged.
+Verified the standalone engine UI in headless Chromium against the running app on
+port 5062: one language control, filled active tabs, aligned research row, the new
+Reports management including a real 2-company compile in Chinese, and the embedded
+PDF viewer. No console or page errors, no horizontal overflow at 1440, 1280, 1100
+or 420px.
 
 **Current stopping point:**
-**Phases 1–3 complete, pre-push verified, and PUSHED** to
-`origin/account-research-qwen`. `main` untouched, no merge, no force-push.
+The UI organization pass is **complete and verified in the standalone engine**, and
+**uncommitted**. The equivalent work in the CRM is **NOT STARTED** because that
+repository is not on this machine.
 
 **Recommended next command/action:**
-Open a pull request when ready, or deploy per `DEPLOY.md`. Render deployment has
-NOT been started.
+Open this project in the CRM repository and port the pass (see section 14,
+"NOT DONE"). Or commit the engine changes here first.
 
 **Uncommitted changes:**
-CRM: none — branch `account-research-qwen`, five commits
-(`790bb6a`, `fcdd036`, `3c66d49`, `d4536a5`, `bc928b6`). `main` untouched.
-Engine: `app.py`, `access.py`, `research_service.py`,
-`ai_credentials.env.example`, `STATUS.md` — not a git repository.
+Engine: `templates/index.html`, `static/style.css`, `static/app.js`, `STATUS.md`.
+CRM: unchanged — branch `account-research-qwen`, five commits, `main` untouched.
 
-**Application currently runnable:** Yes. Engine on 5057, CRM on 3000 with
-`CURRENT_ACCOUNT_RESEARCH_URL` and `ACCOUNT_RESEARCH_SERVICE_KEY` set.
+**Application currently runnable:** Yes. `PORT=5062 .venv/bin/python app.py`.
+Note Chrome refuses port 5061 as an unsafe port; 5057 and 5062 are fine.
 
 **Known blockers / limitations:**
-1. Live research blocked — DashScope models require paid activation.
-2. In-flight batches live in the engine's memory; a restart loses progress but
-   never a completed report, which is already in Neon.
-3. Render deployment not performed.
-4. `APOLLO_API_KEY` absent.
+1. The CRM repository is absent here, so the Current/Previous tab pair and the
+   Claude-page visual reference could not be touched.
+2. Live new research WORKS as of 2026-09-03 and costs tokens. Do not run it to test.
+3. In-flight batches live in the engine's memory; a restart loses progress but
+   never a completed report.
+4. Render deployment not performed.
+5. `APOLLO_API_KEY` set locally; still to be added on Render (§0a).

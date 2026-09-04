@@ -1610,7 +1610,8 @@ def yahoo_finance_evidence(listing):
             "text": block["text"][:CHAR_BUDGET.get(tier, 2000)]}
 
 
-def build_shared_evidence(company, website, cfg, progress=None, trust_website=False):
+def build_shared_evidence(company, website, cfg, progress=None, trust_website=False,
+                          known_contacts=None):
     """Stage 1-6, run ONCE per company. The result is shared by every model and cached.
 
     Searches and page fetches run concurrently; the baseline did both sequentially
@@ -1876,7 +1877,24 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     t = time.time()
     apollo_usage = apollo.new_usage()
     apollo_people = []
-    if apollo.configured(cfg):
+
+    # ---- Contacts we already hold come first -----------------------------
+    # The CRM's own records cost nothing and carry emails we already verified.
+    # Apollo is a gap-filler, not the first call. `known_contacts` is attached
+    # by the CRM proxy; running the engine standalone simply gets none.
+    crm_people = people.from_crm(known_contacts or [])
+    apollo_usage["crm_contacts_supplied"] = len(known_contacts or [])
+    apollo_usage["crm_contacts_relevant"] = len(crm_people)
+    if crm_people:
+        progress("contacts", "CRM: {} known contact(s), {} relevant after ranking".format(
+            len(known_contacts or []), len(crm_people)))
+
+    enough_from_crm = len(crm_people) >= apollo.enrich_limit(cfg)
+    if enough_from_crm:
+        progress("contacts",
+                 "CRM already covers this company - Apollo not called (saved a lookup)")
+        apollo_usage["status"] = "skipped_crm_sufficient"
+    elif apollo.configured(cfg):
         progress("apollo", "Apollo: searching people at {}...".format(domain or name))
         # Stage 1: search (no credit cost) -> rank -> stage 2: enrich only the top
         # contacts. Enriching everything Apollo returns would cost ~100 credits a
@@ -1898,6 +1916,9 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                 apollo_usage["emails_verified"]))
     else:
         progress("apollo", "Apollo: not configured - web research only")
+    # Source priority is the order here: CRM first, then Apollo as the filler.
+    apollo_people = people.merge(crm_people, apollo_people, limit=40) if crm_people \
+        else apollo_people
     timings["apollo"] = round(time.time() - t, 1)
 
     quality = assess_evidence(evidence, name, name_cn, domain, website_status, ranked=ranked)

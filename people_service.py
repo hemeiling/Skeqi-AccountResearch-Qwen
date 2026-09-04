@@ -25,6 +25,7 @@ import re
 SOURCE_APOLLO = "Apollo"
 SOURCE_OFFICIAL = "Official"
 SOURCE_WEB = "Web"
+SOURCE_CRM = "CRM"          # already in our own database; costs nothing to reuse
 
 # (score, department, why-relevant-to-SKEQI, title pattern). First match wins,
 # so the most specific roles are listed first.
@@ -68,17 +69,50 @@ RELEVANCE_RULES = (
     (73, "Automation", "Direct technical counterpart for automation, robotics and controls scope",
      r"\b(automation|robotic|controls)\w*\b.{0,24}\b(director|manager|lead|head|engineer)\w*"),
     (72, "Battery Engineering", "Owns cell, module and PACK process design - SKEQI's core assembly scope",
-     r"\b(battery|cell|module|pack)\b.{0,24}\b(engineering|director|manager|lead|head)\w*"),
+     r"\b(battery|cell|module|pack)\b.{0,24}\b(engineer|engineering|director|manager|lead|head)\w*"),
     (71, "Energy Storage", "Owns ESS product and manufacturing scope that SKEQI assembly lines serve",
      r"\b(energy storage|e\.?s\.?s\.?|bess)\b"),
     (69, "Engineering", "Technical evaluator for equipment, tooling and process capability",
-     r"\b(process engineering|equipment engineering|industrial engineering|manufacturing engineering)\b"),
+     r"\b(process|equipment|industrial|manufacturing|automation|controls)\s+engineer\w*\b"),
     (68, "Engineering", "Reviews and approves equipment specifications",
      r"\b(engineering)\b.{0,20}\b(director|manager|lead|head)\w*"),
     (66, "Quality", "Sets inspection and acceptance standards for incoming lines",
      r"\b(quality)\b.{0,20}\b(director|manager|lead|head)\w*"),
     (60, "Sales / Business Leadership", "Commercial owner of the programmes that drive new capacity",
      r"\b(v\.?p\.?|vice president|head|director)\b.{0,24}\b(sales|business development|commercial)\b"),
+
+    # ---- Second band: people who influence, specify, evaluate, fund or approve
+    # a SKEQI purchase without owning the production line themselves. They rank
+    # BELOW every core role above, but scoring them 0 dropped them entirely and
+    # left the roster as a list of manufacturing titles rather than a buying
+    # centre. Anything here that is genuinely line-adjacent has already matched
+    # a higher rule, because first match wins.
+    (58, "Program Leadership", "Runs the launch or capacity programme a new line is bought under; controls timing and scope",
+     r"\b(program|programme|project|launch|industrialisation|industrialization)\b.{0,24}\b(director|manager|lead|head|owner)\w*"),
+    (56, "Business Unit Leadership", "Owns the P&L the investment is charged to; can sponsor or veto a line purchase",
+     r"\b(general manager|business unit|division|segment|country manager|managing director)\b"),
+    (55, "Finance Leadership", "Approves and funds capital equipment spend; owns the business case a line must pass",
+     r"\b(chief financial|c\.?f\.?o\.?|财务总监|首席财务官)\b"
+     r"|\b(v\.?p\.?|vice president|head|svp|evp|director|manager)\b.{0,24}"
+     r"\b(financ|controll|capital|investment|treasur)\w*"
+     r"|\b(financ|treasur)\w*\b.{0,20}\b(director|manager|head|lead|controller|officer|"
+     r"vice president|v\.?p\.?)\w*"
+     r"|\b(financial controller|controller)\b"),
+    (52, "Innovation / R&D", "Sets the technology roadmap that decides which process and equipment get specified",
+     r"\b(r ?& ?d|research and development|innovation|advanced (manufactur|engineering|technolog))\w*"
+     r"\b.{0,24}\b(director|manager|lead|head|vice president|v\.?p\.?)\w*"
+     r"|\b(chief (innovation|research) officer)\b"),
+    (50, "Engineering", "Evaluates equipment capability and signs technical acceptance",
+     r"\b(engineer)\w*\b"),
+    (46, "Quality", "Sets inspection and acceptance criteria a delivered line must meet",
+     r"\b(quality|qa|qc)\b"),
+    (44, "Technology", "Owns the systems a new line must integrate with",
+     r"\b(technolog|digital|automation|controls|i\.?t\.?)\w*\b.{0,24}"
+     r"\b(director|manager|lead|head|architect|specialist)\w*"),
+    (42, "Maintenance / Reliability", "Owns uptime and spare-part strategy for installed equipment",
+     r"\b(maintenance|reliability|asset management)\b"),
+    (40, "Supply Chain", "Touches supplier onboarding and delivery for capital equipment",
+     r"\b(supplier|vendor|sourcing|procurement|purchasing|supply)\w*\b"),
 )
 
 SENIORITY_BONUS = {"c_suite": 12, "founder": 10, "owner": 9, "partner": 7,
@@ -145,6 +179,47 @@ def _key(name):
     return parts[0] if len(parts) == 1 else "{} {}".format(parts[0], parts[-1])
 
 
+_PLACEHOLDER = {"", "-", "—", "n/a", "na", "none", "null", "unknown", "tbd", "?"}
+
+
+def _clean(value):
+    """A field the CRM filled with a placeholder is an empty field."""
+    v = (value or "").strip()
+    return "" if v.lower() in _PLACEHOLDER else v
+
+
+def _norm_company(value):
+    """Company identity for dedupe: lowercase, no legal suffix, no punctuation."""
+    v = (value or "").lower()
+    v = re.sub(r"\b(co\.?,? ?ltd\.?|ltd\.?|llc|inc\.?|corp\.?|corporation|company|"
+               r"gmbh|plc|s\.?a\.?|s\.?p\.?a\.?|ag|bv|nv|pte\.? ?ltd\.?)\b", " ", v)
+    v = re.sub(r"[^a-z0-9一-鿿 ]+", " ", v)
+    return re.sub(r"\s+", " ", v).strip()
+
+
+def identity_keys(person):
+    """Every key this person can be recognised by, strongest evidence first.
+
+    Two records are the same human if ANY key matches. Email is exact; a
+    LinkedIn profile is exact; a name alone is not — "Jim Farley" at two
+    different companies is two people — so the name key carries the company.
+    """
+    keys = []
+    email = (person.get("email") or "").strip().lower()
+    if email and "@" in email:
+        keys.append("email:" + email)
+    li = (person.get("linkedin_url") or "").strip().lower()
+    if li:
+        li = re.sub(r"^https?://(www\.)?", "", li).rstrip("/")
+        li = re.sub(r"\?.*$", "", li)
+        if li:
+            keys.append("li:" + li)
+    name = _key(person.get("name"))
+    if name:
+        keys.append("name:{}|{}".format(name, _norm_company(person.get("company"))))
+    return keys
+
+
 def from_apollo(people):
     """Score, filter and shape Apollo people. Anyone scoring 0 is dropped."""
     out = []
@@ -168,6 +243,45 @@ def from_apollo(people):
             "enriched": bool(p.get("enriched")),
         })
     out.sort(key=lambda r: -r["score"])       # ranked before anything is enriched
+    return out
+
+
+def from_crm(rows):
+    """Score and shape contacts the CRM already holds.
+
+    Same shape as from_apollo so merge() can treat them as one population. An
+    email that is already in the CRM is kept as-is; nothing is invented, and a
+    row with no email keeps an empty one rather than a guess.
+    """
+    out = []
+    for r in rows or []:
+        name = (r.get("name") or "").strip()
+        title = (r.get("title") or "").strip()
+        if not name or not title:
+            continue
+        score, dept, why = score_person(title, r.get("seniority"))
+        if score <= 0:
+            continue
+        email = (r.get("email") or "").strip()
+        out.append({
+            "name": name, "title": title,
+            # A CRM placeholder is not a department: fall back to the ruleset's,
+            # which is what makes the roster readable by buying-centre function.
+            "department": _clean(r.get("department")) or dept or "—",
+            "seniority": _clean(r.get("seniority")).replace("_", " ") or "—",
+            "why": why, "score": score,
+            "sources": [SOURCE_CRM],
+            "linkedin_url": (r.get("linkedin_url") or "").strip(),
+            "evidence_url": "", "apollo_id": "",
+            "company": (r.get("company") or "").strip(),
+            "location": (r.get("location") or "").strip(),
+            "email": email,
+            "email_status": (r.get("email_status") or "").strip()
+                            or ("From CRM" if email else "Not available"),
+            "enriched": bool(email),
+            "crm_contact_id": r.get("crm_contact_id"),
+        })
+    out.sort(key=lambda r: -r["score"])
     return out
 
 
@@ -262,17 +376,26 @@ def parse_report_people(report, sources=None, official_domain=""):
 
 def merge(web_people, apollo_people, limit=20):
     """One row per person, ranked. Web/official records win on title."""
-    merged = {}
+    merged = {}          # canonical key -> record
+    alias = {}           # every identity key seen -> canonical key
     order = []
     for person in list(web_people) + list(apollo_people):
-        key = _key(person["name"])
-        if not key:
+        # Source priority is the ORDER of this list; see merge()'s callers.
+        keys = identity_keys(person)
+        if not keys:
             continue
-        if key not in merged:
-            merged[key] = dict(person)
-            order.append(key)
+        hit = next((alias[k] for k in keys if k in alias), None)
+        if hit is None:
+            canonical = keys[0]
+            merged[canonical] = dict(person)
+            order.append(canonical)
+            for k in keys:
+                alias.setdefault(k, canonical)
             continue
-        into = merged[key]
+        # Same person reached by any one of email / LinkedIn / name+company.
+        for k in keys:
+            alias.setdefault(k, hit)
+        into = merged[hit]
         for src in person["sources"]:
             if src not in into["sources"]:
                 into["sources"].append(src)
@@ -281,6 +404,13 @@ def merge(web_people, apollo_people, limit=20):
         incoming_web = SOURCE_APOLLO not in person["sources"]
         if incoming_web and person.get("title") not in ("", "—"):
             into["title"] = person["title"]
+        # An email we already hold in the CRM is authoritative: it was verified
+        # by us, and it costs nothing. Apollo never overwrites it.
+        if SOURCE_CRM in person["sources"] and person.get("email"):
+            into["email"] = person["email"]
+            into["email_status"] = person.get("email_status") or into.get("email_status")
+        if person.get("crm_contact_id") and not into.get("crm_contact_id"):
+            into["crm_contact_id"] = person["crm_contact_id"]
         if into.get("title") in ("", "—"):
             into["title"] = person.get("title") or "—"
         for field in ("department", "seniority", "linkedin_url", "evidence_url",
@@ -297,7 +427,43 @@ def merge(web_people, apollo_people, limit=20):
         p["source_badges"] = p["sources"]
         p["corroborated"] = len(p["sources"]) > 1
     people.sort(key=lambda p: (-p["score"], not p["corroborated"], p["name"]))
-    return people[:limit]
+    return _diversify(people, limit)
+
+
+# At most this many people from any one department in the returned roster,
+# unless there is nothing else to fill the slots with.
+_PER_DEPARTMENT_CAP = 4
+
+
+def _diversify(people, limit):
+    """Top N as a BUYING CENTRE, not N copies of the same job title.
+
+    Ford's CRM record holds eighteen battery manufacturing engineers. Ranked on
+    score alone they fill the entire roster and push out the plant, procurement,
+    finance and programme people who actually influence, fund or approve the
+    purchase. So each department gets a cap on the first pass; whatever is left
+    over backfills by score, which means a company that genuinely only has one
+    kind of contact still returns a full list.
+    """
+    if limit is None or len(people) <= limit:
+        return people[:limit] if limit else people
+    picked, seen, spill = [], {}, []
+    for person in people:                       # already score-sorted
+        dept = person.get("department") or "—"
+        if seen.get(dept, 0) < _PER_DEPARTMENT_CAP:
+            seen[dept] = seen.get(dept, 0) + 1
+            picked.append(person)
+            if len(picked) == limit:
+                return picked
+        else:
+            spill.append(person)
+    for person in spill:                        # backfill, still by score
+        picked.append(person)
+        if len(picked) == limit:
+            break
+    # The cap decides WHO is in the roster; the reader still wants it ranked.
+    picked.sort(key=lambda p: (-p.get("score", 0), not p.get("corroborated"), p.get("name", "")))
+    return picked[:limit]
 
 
 def to_prompt_block(people, org_name=""):
