@@ -1610,6 +1610,47 @@ def yahoo_finance_evidence(listing):
             "text": block["text"][:CHAR_BUDGET.get(tier, 2000)]}
 
 
+def contact_outcome(crm_people, final_people, usage, company):
+    """One human sentence describing what contact enrichment actually produced.
+
+    The caller decides styling from the wording: a line starting with "OK" is a
+    success, "WARN" is non-blocking degradation. Counts are always included so
+    "no contacts" can be told apart from "no lookup".
+    """
+    supplied = usage.get("crm_contacts_supplied", 0)
+    crm_n = len(crm_people)
+    total = len(final_people)
+    apollo_n = usage.get("people_retained", 0)
+    status = usage.get("status") or ""
+
+    if status == "skipped_crm_sufficient":
+        return ("OK Contact enrichment - {} CRM contact(s) found, {} relevant, "
+                "Apollo not needed".format(supplied, crm_n))
+    if crm_n and apollo_n:
+        return ("OK Contact enrichment - {} CRM contact(s) + {} Apollo contact(s), "
+                "{} after merge".format(crm_n, apollo_n, total))
+    if crm_n and not apollo_n:
+        if status in ("ok", "no_people"):
+            return ("OK Contact enrichment - {} CRM contact(s); Apollo added none"
+                    .format(crm_n))
+        return ("WARN Contact enrichment - {} CRM contact(s) kept; Apollo unavailable "
+                "({}); continuing".format(crm_n, status or "no result"))
+    if apollo_n:
+        return ("OK Contact enrichment - no CRM contacts for \"{}\"; {} from Apollo"
+                .format(company, apollo_n))
+    # Nothing from either side: say WHICH side produced nothing, and why.
+    if status == "not_configured":
+        return ("WARN Contact enrichment - no CRM contacts for \"{}\" and Apollo is not "
+                "configured; continuing on web evidence".format(company))
+    if supplied == 0:
+        return ("WARN Contact enrichment - no CRM contacts matched \"{}\" (try the full "
+                "registered company name) and Apollo returned none ({}); continuing on "
+                "web evidence".format(company, status or "no result"))
+    return ("WARN Contact enrichment - {} CRM contact(s) supplied but none relevant, "
+            "Apollo returned none ({}); continuing on web evidence"
+            .format(supplied, status or "no result"))
+
+
 def build_shared_evidence(company, website, cfg, progress=None, trust_website=False,
                           known_contacts=None):
     """Stage 1-6, run ONCE per company. The result is shared by every model and cached.
@@ -1916,9 +1957,17 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                 apollo_usage["emails_verified"]))
     else:
         progress("apollo", "Apollo: not configured - web research only")
+        apollo_usage["status"] = "not_configured"
     # Source priority is the order here: CRM first, then Apollo as the filler.
     apollo_people = people.merge(crm_people, apollo_people, limit=40) if crm_people \
         else apollo_people
+
+    # ---- One closing line that states the OUTCOME -------------------------
+    # "unavailable" told the reader nothing: 0 CRM contacts because the company
+    # name did not match, an Apollo bug, and Apollo simply not being needed all
+    # read identically. This says which of those actually happened.
+    apollo_usage["contacts_final"] = len(apollo_people)
+    progress("contacts", contact_outcome(crm_people, apollo_people, apollo_usage, name))
     timings["apollo"] = round(time.time() - t, 1)
 
     quality = assess_evidence(evidence, name, name_cn, domain, website_status, ranked=ranked)
