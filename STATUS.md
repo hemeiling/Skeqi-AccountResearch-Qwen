@@ -228,6 +228,83 @@ ruleset's own department is used instead of printing "N/A" in the roster.
 
 ---
 
+## 0d. Contact identity and provenance — two fixes (2026-09-04)
+
+### The Verkor evidence
+
+Verkor ran with 40 CRM contacts supplied, 39 retained. Its CRM holds exactly
+**one** contact carrying an email and a LinkedIn URL. In the saved roster that
+person appeared **twice**:
+
+| Row | Sources | Company | Email | LinkedIn | CRM id |
+|---|---|---|---|---|---|
+| 7 | `Apollo` | *(blank)* | — | — | — |
+| 8 | `CRM` | Verkor | present | present | 5805 |
+
+The CRM data was never lost. The two rows simply never merged, so a reader could
+meet the empty one first.
+
+### Fix 1 — identity that tolerates a missing company
+
+`identity_keys` keyed a name as `name|company`. That stops *Jim Farley* at two
+companies merging, and it was **my regression**: rows parsed out of the model's
+own report carry **no** company, so they could never match the CRM row.
+
+Matching order is now:
+
+1. same normalised **email**
+2. same normalised **LinkedIn**
+3. same normalised **name + same company**
+4. same normalised **name** where **either side states no company**
+
+A company only disambiguates when **both** sides claim one, and they differ.
+Within a single company's research run everyone belongs to that company.
+
+**CRM keeps precedence** for the structured fields — email, email status,
+LinkedIn, company, location, seniority, contact id — and a blank never
+overwrites a CRM value, whichever order the records arrive in. Nothing is
+invented.
+
+A second bug surfaced while testing: `dict(person)` is shallow, so the canonical
+record **shared the caller's `sources` list** and merge appended provenance onto
+its own input. Re-merging accumulated badges that never applied.
+
+### Fix 2 — provenance comes from the pipeline, not the model's prose
+
+`parse_report_people` read the report's own "Source" column and stamped
+`Apollo` when the model wrote it. Verkor carried an Apollo badge on a run where
+**Apollo was never called** (`calls: 0`, `status: skipped_crm_sufficient`).
+
+Rows parsed from a report are now **Web** or **Official**. Only records that
+actually came back from Apollo, via `from_apollo()`, carry `Apollo`. Merged
+contacts show every real provenance: `CRM + Web`, `CRM + Apollo`.
+
+### Verified — saved data only, no paid call
+
+| Check | Result |
+|---|---|
+| Margot Cussigh: duplicate rows | **2 → 1** |
+| CRM email / status / LinkedIn / id / company / location | ✓ all preserved |
+| Blank never overwrites CRM, either arrival order | ✓ |
+| False Apollo badge from prose | ✓ gone — reads `CRM + Web` |
+| Genuine Apollo record | ✓ still `CRM + Apollo` |
+| Caller's input no longer mutated | ✓ |
+| Same name, different companies | ✓ stay apart |
+| Same company written differently | ✓ merges |
+| All 31 stored reports parse and merge | ✓ 0 failures |
+| Duplicate-name rows across every saved roster | ✓ 1 → 0 |
+
+**Ford Motor Company**, matched by company id 7 (`ford motor`), not the empty
+short-name `ford` record: 55 contacts, **12 with email, 0 with LinkedIn**, 43
+with neither. LinkedIn is not being lost — it was never captured. All 12 emails
+survive ranking; 8 reach the Top 20, the other 4 ranking below the cut. No email
+is invented.
+
+The `crmContactsFor` cap stays at **40 of 55** for now, deliberately, pending
+Top 20 quality review.
+
+---
+
 ## 1. Current Objective
 
 Build a practical standalone Account Research application that rapidly researches a list of

@@ -200,24 +200,28 @@ def _norm_company(value):
 def identity_keys(person):
     """Every key this person can be recognised by, strongest evidence first.
 
-    Two records are the same human if ANY key matches. Email is exact; a
-    LinkedIn profile is exact; a name alone is not — "Jim Farley" at two
-    different companies is two people — so the name key carries the company.
+    Email is exact; a LinkedIn profile is exact; a name is only decisive
+    alongside a company — "Jim Farley" at two different companies is two people.
     """
     keys = []
     email = (person.get("email") or "").strip().lower()
     if email and "@" in email:
         keys.append("email:" + email)
-    li = (person.get("linkedin_url") or "").strip().lower()
+    li = _norm_linkedin(person.get("linkedin_url"))
     if li:
-        li = re.sub(r"^https?://(www\.)?", "", li).rstrip("/")
-        li = re.sub(r"\?.*$", "", li)
-        if li:
-            keys.append("li:" + li)
+        keys.append("li:" + li)
     name = _key(person.get("name"))
     if name:
         keys.append("name:{}|{}".format(name, _norm_company(person.get("company"))))
     return keys
+
+
+def _norm_linkedin(value):
+    li = (value or "").strip().lower()
+    if not li:
+        return ""
+    li = re.sub(r"^https?://(www\.)?", "", li).rstrip("/")
+    return re.sub(r"\?.*$", "", li)
 
 
 def from_apollo(people):
@@ -351,9 +355,12 @@ def parse_report_people(report, sources=None, official_domain=""):
         official = bool(official_domain) and any(official_domain in u for u in urls)
         if not official:
             official = bool(re.search(r"official (website|site)|company website|leadership page", cell_low))
-        if re.search(r"\bapollo\b", cell_low) and not urls and not official:
-            source = SOURCE_APOLLO
-        elif official:
+        # The model writing "Apollo" in its own table is not evidence that Apollo
+        # ran. Verkor's roster carried an Apollo badge on a run where Apollo was
+        # never called. Provenance is decided by the pipeline: rows parsed out of
+        # the report are web or official, and only records that actually came
+        # back from Apollo carry SOURCE_APOLLO (see from_apollo()).
+        if official:
             source = SOURCE_OFFICIAL
         else:
             source = SOURCE_WEB
@@ -362,7 +369,7 @@ def parse_report_people(report, sources=None, official_domain=""):
             "name": name, "title": title or "—",
             "department": dept or "—", "seniority": "—",
             "why": why or rule_why,
-            "score": score if score > 0 else (0 if source == SOURCE_APOLLO else 50),
+            "score": score if score > 0 else 50,
             "sources": [source],
             "linkedin_url": next((u for u in urls if "linkedin.com" in u), ""),
             "evidence_url": urls[0] if urls else "", "apollo_id": "",
@@ -378,21 +385,56 @@ def merge(web_people, apollo_people, limit=20):
     """One row per person, ranked. Web/official records win on title."""
     merged = {}          # canonical key -> record
     alias = {}           # every identity key seen -> canonical key
+    by_name = {}         # normalised name -> [canonical keys]
     order = []
+
+    def _find(person):
+        """The record this person already is, or None.
+
+        Email and LinkedIn are exact. A name needs a company to be decisive —
+        but only when BOTH sides state one. A row parsed out of the model's
+        report carries no company, so requiring one there split every CRM
+        contact the model also mentioned into two rows: Margot Cussigh appeared
+        twice for Verkor, once with her CRM email and LinkedIn and once empty.
+        Within a single company's research run everyone belongs to that company,
+        so a missing company is not a distinction.
+        """
+        for k in identity_keys(person):
+            if k in alias:
+                return alias[k]
+        name = _key(person.get("name"))
+        if not name:
+            return None
+        mine = _norm_company(person.get("company"))
+        for canonical in by_name.get(name, []):
+            theirs = _norm_company((merged.get(canonical) or {}).get("company"))
+            # Same name, and nobody is claiming a DIFFERENT company.
+            if not mine or not theirs or mine == theirs:
+                return canonical
+        return None
+
     for person in list(web_people) + list(apollo_people):
         # Source priority is the ORDER of this list; see merge()'s callers.
         keys = identity_keys(person)
         if not keys:
             continue
-        hit = next((alias[k] for k in keys if k in alias), None)
+        hit = _find(person)
         if hit is None:
             canonical = keys[0]
-            merged[canonical] = dict(person)
+            # dict() is shallow, so the copy would SHARE the caller's sources
+            # list and merge would append provenance onto the input. Re-merging
+            # the same records then accumulated badges that never applied.
+            rec = dict(person)
+            rec["sources"] = list(person.get("sources") or [])
+            merged[canonical] = rec
             order.append(canonical)
             for k in keys:
                 alias.setdefault(k, canonical)
+            nm = _key(person.get("name"))
+            if nm:
+                by_name.setdefault(nm, []).append(canonical)
             continue
-        # Same person reached by any one of email / LinkedIn / name+company.
+        # Same person reached by email, LinkedIn, or name with no conflicting company.
         for k in keys:
             alias.setdefault(k, hit)
         into = merged[hit]
@@ -404,11 +446,13 @@ def merge(web_people, apollo_people, limit=20):
         incoming_web = SOURCE_APOLLO not in person["sources"]
         if incoming_web and person.get("title") not in ("", "—"):
             into["title"] = person["title"]
-        # An email we already hold in the CRM is authoritative: it was verified
-        # by us, and it costs nothing. Apollo never overwrites it.
-        if SOURCE_CRM in person["sources"] and person.get("email"):
-            into["email"] = person["email"]
-            into["email_status"] = person.get("email_status") or into.get("email_status")
+        # CRM data is authoritative for the structured fields: we verified it, it
+        # costs nothing, and nothing else may overwrite it with a blank.
+        if SOURCE_CRM in person["sources"]:
+            for field in ("email", "email_status", "linkedin_url", "company",
+                          "location", "crm_contact_id", "seniority"):
+                if person.get(field) not in ("", "—", None):
+                    into[field] = person[field]
         if person.get("crm_contact_id") and not into.get("crm_contact_id"):
             into["crm_contact_id"] = person["crm_contact_id"]
         if into.get("title") in ("", "—"):
