@@ -696,7 +696,7 @@ def api_batch_upload():
         return jsonify({"error": "Could not read file: {}".format(e)[:200]}), 400
     if not headers:
         return jsonify({"error": "The file appears to be empty."}), 400
-    mapping = bs.guess_mapping(headers)
+    mapping = bs.guess_mapping(headers, rows)
     preview = bs.build_items(rows, mapping)
     return jsonify({"headers": headers, "rows": rows[:500], "mapping": mapping,
                     "items": preview, "row_count": len(rows)})

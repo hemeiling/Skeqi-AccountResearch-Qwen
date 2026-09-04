@@ -81,18 +81,58 @@ def parse_upload(filename, data):
     return rows[0], rows[1:]
 
 
-def guess_mapping(headers):
-    """Best-effort column guess; the UI lets the user override it."""
-    lower = [h.lower().strip() for h in headers]
+_URLISH = re.compile(r"^(https?://|www\.)|\.(com|cn|net|org|io|co|de|jp|kr|eu|us|uk)\b", re.I)
+
+
+def _looks_like_websites(rows, idx, sample=12):
+    """True when a column's values are mostly URLs or bare domains."""
+    if idx is None:
+        return False
+    seen = hits = 0
+    for row in rows[:sample]:
+        v = str((row[idx] if idx < len(row) else "") or "").strip()
+        if not v:
+            continue
+        seen += 1
+        if _URLISH.search(v):
+            hits += 1
+    return seen > 0 and hits >= max(1, int(seen * 0.6))
+
+
+def guess_mapping(headers, rows=None):
+    """Detect the company and website columns, and say how sure we are.
+
+    The caller needs the confidence, not just the guess: asking every user to
+    confirm two dropdowns on every upload is noise when the header literally
+    says "Company Name", and silently guessing column 0 is wrong when it does
+    not. Only a genuinely ambiguous company column should prompt anyone.
+    """
+    rows = rows or []
+    lower = [str(h or "").lower().strip() for h in headers]
     name_idx = site_idx = None
     for i, h in enumerate(lower):
         if name_idx is None and any(k == h or k in h for k in NAME_HINTS):
             name_idx = i
         if site_idx is None and any(k == h or k in h for k in SITE_HINTS):
             site_idx = i
-    # A column full of URLs is the website column even if unlabelled.
-    return {"name": name_idx if name_idx is not None else 0,
-            "website": site_idx if site_idx is not None else (1 if len(headers) > 1 else None)}
+
+    name_confident = name_idx is not None
+    site_confident = site_idx is not None
+    # An unlabelled column that is full of URLs is the website column anyway.
+    if site_idx is None:
+        for i in range(len(headers)):
+            if i != name_idx and _looks_like_websites(rows, i):
+                site_idx, site_confident = i, True
+                break
+    # Never fall back to "column 1 is probably the website". A missing website
+    # is fine — research resolves the official site itself — and a wrong one
+    # sends the whole batch to the wrong domains.
+    if name_idx is None:
+        name_idx = 0
+
+    return {"name": name_idx, "website": site_idx,
+            "name_confident": name_confident, "website_confident": site_confident,
+            "ambiguous": not name_confident}
 
 
 ITEM_DEFAULTS = {
