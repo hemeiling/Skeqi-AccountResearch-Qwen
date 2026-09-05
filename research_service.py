@@ -1510,6 +1510,37 @@ def dedupe_and_rank(raw, name, name_cn, domain, registry=None):
     return ranked, rejected, tier_b
 
 
+# Public suffixes that carry a registrable label one level deeper. Not a full
+# PSL - this is the tail that actually appears in the accounts we research, and
+# a miss degrades to hostname behaviour rather than breaking anything.
+_MULTI_PART_TLDS = (".com.cn", ".net.cn", ".org.cn", ".gov.cn", ".edu.cn",
+                    ".co.uk", ".org.uk", ".ac.uk", ".co.jp", ".or.jp",
+                    ".com.au", ".com.br", ".com.tw", ".com.hk", ".com.sg",
+                    ".co.kr", ".co.in", ".com.mx", ".com.tr")
+
+
+def registrable_domain(url):
+    """The concentration boundary: pcauto.com.cn for all three of its subdomains.
+
+    Measured 2026-09-05: counting HOSTNAMES reported 14 of 43 reports above 80%
+    single-source concentration and hid 红旗 entirely, whose 16 sources split
+    across pcauto.com.cn, m.pcauto.com.cn and price.pcauto.com.cn. Counted here,
+    it is 18 of 43 and 红旗 is 16 of 16. Subdomains of one publisher are one
+    publisher.
+    """
+    try:
+        host = urllib.parse.urlparse(url or "").netloc
+    except Exception:
+        return ""
+    host = host.split(":")[0].lower().replace("www.", "").strip(".")
+    if not host:
+        return ""
+    for suffix in _MULTI_PART_TLDS:
+        if host.endswith(suffix):
+            return ".".join(host.split(".")[-3:])
+    return ".".join(host.split(".")[-2:])
+
+
 def apply_evidence_caps(site_evidence, web_evidence):
     """The production retention rule, as a function.
 
@@ -1524,13 +1555,12 @@ def apply_evidence_caps(site_evidence, web_evidence):
     # pages add noise rather than evidence. Quality over source count.
     strong = sum(1 for e in merged if e["tier"] <= 2)
     low_budget = 2 if strong >= 5 else MAX_LOW_TIER_ITEMS
-    retained, dropped, seen, low_used = [], [], set(), 0
-    for item in merged:
-        key = url_key(item["url"])
-        if key in seen:
-            continue
-        if len(retained) >= MAX_EVIDENCE_ITEMS:
-            dropped.append(dict(item, drop_reason="evidence cap")); continue
+    retained, dropped, seen = [], [], set()
+    per_domain = {}
+    state = {"low_used": 0}
+
+    def admit(item):
+        """Take the item unless the low-tier budget refuses it. Returns a reason."""
         # Measured 2026-09-04: this budget was discarding VERIFIED third-party
         # sources - for Manz AG, four financial pages that each added a new host,
         # a new category and new topics - because Chinese financial hosts are
@@ -1538,13 +1568,52 @@ def apply_evidence_caps(site_evidence, web_evidence):
         # page content. No domain or category is promoted to a higher tier.
         if item["tier"] >= 6 and not (item.get("content_verified")
                                       and not item.get("official")):
-            if low_used >= low_budget:
-                dropped.append(dict(item, drop_reason="low-tier budget")); continue
-            low_used += 1
-        seen.add(key)
-        item = dict(item)
-        item["id"] = len(retained) + 1
-        retained.append(item)
+            if state["low_used"] >= low_budget:
+                return "low-tier budget"
+            state["low_used"] += 1
+        seen.add(url_key(item["url"]))
+        dom = registrable_domain(item["url"])
+        per_domain[dom] = per_domain.get(dom, 0) + 1
+        retained.append(dict(item))
+        return None
+
+    # Pass 1 - DIVERSITY. Walk in tier order but let no single publisher take
+    # more than DIVERSITY_PER_DOMAIN slots yet. Sixteen pages of one company's
+    # own website is one perspective repeated sixteen times, and it used to
+    # consume the whole budget before any third party was considered.
+    deferred = []
+    for item in merged:
+        key = url_key(item["url"])
+        if key in seen:
+            continue
+        if len(retained) >= MAX_EVIDENCE_ITEMS:
+            dropped.append(dict(item, drop_reason="evidence cap")); continue
+        if per_domain.get(registrable_domain(item["url"]), 0) >= DIVERSITY_PER_DOMAIN:
+            deferred.append(item); continue        # not dropped - waiting for pass 2
+        reason = admit(item)
+        if reason:
+            dropped.append(dict(item, drop_reason=reason))
+
+    # Pass 2 - BACKFILL. Diverse qualified evidence is exhausted; spending the
+    # remaining capacity on more strong sources from a domain already present
+    # beats leaving it unused. This is what keeps a genuinely thin account -
+    # one where only a single domain has anything to say - producing a full
+    # report instead of failing a quota.
+    for item in deferred:
+        if url_key(item["url"]) in seen:
+            continue
+        if len(retained) >= MAX_EVIDENCE_ITEMS:
+            dropped.append(dict(item, drop_reason="evidence cap")); continue
+        reason = admit(item)
+        if reason:
+            dropped.append(dict(item, drop_reason=reason))
+
+    # Selection changed; presentation should not. Renumber in tier order so the
+    # evidence package still reads official-first and citation ids stay stable
+    # against what the report prose expects.
+    retained.sort(key=lambda e: (e["tier"], subrank(e["source_type"])))
+    for i, item in enumerate(retained):
+        item["id"] = i + 1
     return retained, dropped
 
 
@@ -1561,8 +1630,13 @@ def evidence_sufficiency(retained, official_domain):
     dom = (official_domain or "").lower().replace("www.", "")
     third = [e for e in retained
              if not dom or dom not in (e.get("url") or "").lower()]
-    hosts = {urllib.parse.urlparse(e["url"]).netloc.lower().replace("www.", "")
-             for e in third}
+    # Registrable domain, not hostname. Three subdomains of one car portal are
+    # one publisher, and counting them as three independent hosts let a report
+    # sourced entirely from pcauto.com.cn satisfy a diversity test. This makes
+    # sufficiency HARDER to reach, which means more retrieval - never fewer
+    # reports. Sufficiency remains a dial on retrieval, not a gate on synthesis.
+    hosts = {registrable_domain(e["url"]) for e in third}
+    hosts.discard("")
     cats = {source_category(e["url"]) for e in third}
     topics = set()
     for e in retained:
@@ -1780,6 +1854,14 @@ SITE_SKIP = ("login", "cart", "privacy", "cookie", "terms", "legal", "sitemap", 
              "career", "job", "rss", "feed", "wp-content", "wp-json", "wp-admin",
              ".pdf", ".jpg", ".png", ".zip", ".mp4", "mailto:", "tel:", "javascript:")
 MAX_SITE_PAGES = 8
+# No single publisher may take more than this many of MAX_EVIDENCE_ITEMS before
+# every other qualified domain has had its turn. Anchored to MAX_SITE_PAGES, not
+# picked: the official crawl can contribute at most 8 pages, so the whole crawl
+# still lands in the first pass and only SEARCH results piling onto the same
+# domain have to wait. Measured over the 43 stored reports, a first-pass cap of 8
+# is exceeded by 12 of them - 8 are single-domain accounts that backfill to an
+# identical result, and 4 have other domains whose evidence gets promoted.
+DIVERSITY_PER_DOMAIN = MAX_SITE_PAGES
 
 
 def _site_links(html, base, domain):
