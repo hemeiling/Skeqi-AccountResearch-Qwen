@@ -27,6 +27,8 @@ local development is unchanged.
 import base64
 import hashlib
 import hmac
+import os
+import subprocess
 import time
 import urllib.parse
 
@@ -36,6 +38,31 @@ COOKIE = "ar_access"
 SERVICE_HEADER = "X-AR-Service-Key"
 TTL_SECONDS = 12 * 3600
 OPEN_PATHS = ("/healthz", "/login", "/logout", "/static/")
+
+
+_VERSION = None
+
+
+def deployed_version():
+    """Short commit of the running build. Cached: never shell out per request.
+
+    Render exports RENDER_GIT_COMMIT, so the deployed service answers without a
+    git binary or a .git directory. Locally we ask git. Either way a failure is
+    "unknown", never an exception on a health check.
+    """
+    global _VERSION
+    if _VERSION is None:
+        sha = (os.environ.get("RENDER_GIT_COMMIT") or "").strip()
+        if not sha:
+            try:
+                sha = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=os.path.dirname(os.path.abspath(__file__)),
+                    stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+            except Exception:
+                sha = ""
+        _VERSION = (sha[:12] or "unknown")
+    return _VERSION
 
 
 def enabled(cfg):
@@ -173,7 +200,12 @@ def install(app, load_config):
 
     @app.route("/healthz")
     def healthz():
-        return {"ok": True}
+        # Deliberately unauthenticated and deliberately boring: liveness plus the
+        # commit that is actually serving, so a deploy can be verified without
+        # logging in and without a paid run. Nothing here is a secret - a short
+        # commit hash of a private repository identifies a build, not a person,
+        # and no credential, path or configuration value is exposed.
+        return {"ok": True, "version": deployed_version()}
 
     @app.route("/login", methods=["GET", "POST"])
     def login():

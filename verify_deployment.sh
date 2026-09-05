@@ -18,6 +18,8 @@ code() { curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$@"; }
 
 echo "── Engine: $ENGINE"
 chk "/healthz"                       200 "$(code "$ENGINE/healthz")"
+VER=$(curl -s --max-time 60 "$ENGINE/healthz" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+printf '  · %-44s %s\n' "deployed commit" "${VER:-unknown}"
 chk "HTTPS enforced"                 https "$(printf '%s' "$ENGINE" | cut -d: -f1)"
 chk "anonymous app page redirects"   302 "$(code "$ENGINE/")"
 chk "anonymous API rejected"         401 "$(code "$ENGINE/api/reports")"

@@ -656,7 +656,11 @@ def resolve_website(name, name_cn, website, cfg, timeout, progress=None, trust=F
             # A hand-corrected URL stays labelled as such even when it validates,
             # so the row shows who chose it.
             return {"website": url, "status": "manual" if trust else "provided",
-                    "score": v["score"], "signals": v.get("signals", []), "text": v["text"]}
+                    "score": v["score"], "signals": v.get("signals", []), "text": v["text"],
+                    # Validated on the domain alone because the host blocks
+                    # automation. The site IS the company's; we just cannot read
+                    # it. That is a retrieval state, not an identity problem.
+                    "blocked": v.get("reason") == "site_blocked"}
         if trust and v.get("method") != "unreachable":
             progress("discover", "Using manually corrected website: {}".format(url))
             return {"website": url, "status": "manual", "score": v["score"],
@@ -1979,7 +1983,16 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     domain = urllib.parse.urlparse(website).netloc.replace("www.", "") if website else ""
     if not name_cn and official_text:
         name_cn = _alias_from_text(official_text, name) or name_cn
+    # An official site that validates but yields no text is BLOCKED, not absent
+    # and not wrong. Tesla is the case that exposed this: tesla.com matches on the
+    # domain, returns nothing to a crawler, and the run used to end as "insufficient
+    # web evidence" - a true statement about the wrong thing.
+    site_blocked = bool(resolved.get("blocked")) or (
+        bool(website) and not official_text and website_status != "unverified")
     timings["official_site"] = round(time.time() - t, 1)
+    if site_blocked:
+        progress("official", "WARN {} - continuing on search and financial evidence"
+                             .format(FAILURE_REASONS["site_blocked"]))
     progress("official", "Website {}: {}".format(
         {"provided": "confirmed", "auto_discovered": "auto-discovered",
          "manual": "manually corrected",
@@ -2202,16 +2215,13 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                                   official_text=official_text)
     evidence, dropped = apply_evidence_caps(site_evidence, web_evidence)
     timings["evidence_build"] = round(time.time() - t, 1)
-    if not evidence:
-        ctx = {"website": website, "website_status": website_status}
-        if website_status == "unverified" and not ranked:
-            raise RetrievalError("no_company_match", FAILURE_REASONS["no_company_match"], **ctx)
-        if website_status == "unverified":
-            raise RetrievalError("site_unverified", FAILURE_REASONS["site_unverified"], **ctx)
-        raise RetrievalError("insufficient", FAILURE_REASONS["insufficient"], **ctx)
     # Yahoo Finance, for public companies only. The search backend does not
     # surface finance.yahoo.com (measured - see finance_service), so the quote
     # page for the validated ticker is fetched directly.
+    #
+    # This runs BEFORE the empty-evidence guard on purpose. It used to run after,
+    # so a public company whose website blocks crawlers was failed for having no
+    # evidence while its financial evidence was still one call away, uncollected.
     yahoo_seeded = False
     if listing["public_company"]:
         try:
@@ -2225,6 +2235,18 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                 "Yahoo Finance retrieved but evidence set was full")
         else:
             progress("evidence", "Yahoo Finance page unavailable for {}".format(listing["ticker"]))
+
+    # Judged only now, with financial evidence included. A blocked official site
+    # is reported as exactly that, and only when nothing else was found either.
+    if not evidence:
+        ctx = {"website": website, "website_status": website_status}
+        if website_status == "unverified" and not ranked:
+            raise RetrievalError("no_company_match", FAILURE_REASONS["no_company_match"], **ctx)
+        if website_status == "unverified":
+            raise RetrievalError("site_unverified", FAILURE_REASONS["site_unverified"], **ctx)
+        if site_blocked:
+            raise RetrievalError("site_blocked", FAILURE_REASONS["site_blocked"], **ctx)
+        raise RetrievalError("insufficient", FAILURE_REASONS["insufficient"], **ctx)
 
     yahoo_urls = [e["url"] for e in evidence if "finance.yahoo.com" in e["url"].lower()]
     financial_sources = {
@@ -2319,6 +2341,9 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     quality["web_search_available"] = wave_no > 0          # a search wave executed
     quality["web_search_sources"] = len(raw)               # and what it actually returned
     quality["direct_site_sources"] = len(site_evidence)
+    # A state the report and the UI should both be able to say out loud, so a
+    # thin official section is explained rather than looking like a gap.
+    quality["site_blocked"] = site_blocked
     quality["web_sources"] = len(evidence) - len(site_evidence)
     progress("quality", "{} unique sources retained - evidence {}{}".format(
         len(evidence), quality["level"],
@@ -2334,6 +2359,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     package = {
         "company": company, "website": website, "resolved_alias": name_cn,
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
+        "site_blocked": site_blocked,
         "financial_sources": financial_sources,
         "quality": quality,
         "apollo": {"usage": apollo_usage, "people": apollo_people},
