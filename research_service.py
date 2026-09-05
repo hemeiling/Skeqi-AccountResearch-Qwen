@@ -2169,6 +2169,18 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     # if it is unavailable we fall back to the ordinary blocking request and the
     # run is unaffected. The finished report is identical either way.
     streamer = SectionStreamer(on_section) if on_section else None
+    # Diagnostics for why live sections are not progressive. 红旗 published all 19
+    # sections inside 1.08s at the END of a four-minute run, which is the signature
+    # of the fallback below rather than of streaming. The exception is no longer
+    # swallowed: it is recorded and returned on the run.
+    stream_diag = {"attempted": False, "used": False, "fallback": False,
+                   "error_type": None, "error": None,
+                   "first_section_at": None, "completed_at": None}
+
+    def _feed(text):
+        if stream_diag["first_section_at"] is None:
+            stream_diag["first_section_at"] = round(time.time() - started, 2)
+        streamer.feed(text)
 
     def _post():
         payload = {
@@ -2177,11 +2189,16 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
             "parameters": params,
         }
         if streamer is not None:
+            stream_diag["attempted"] = True
             try:
-                return post_json_stream(url, payload, cfg["DASHSCOPE_API_KEY"],
-                                        timeout, streamer.feed)
-            except Exception:
-                pass                    # not available here: take the normal path
+                out = post_json_stream(url, payload, cfg["DASHSCOPE_API_KEY"],
+                                       timeout, _feed)
+                stream_diag["used"] = True
+                return out
+            except Exception as e:
+                stream_diag["fallback"] = True
+                stream_diag["error_type"] = type(e).__name__
+                stream_diag["error"] = str(e)[:300]
         return post_json(url, payload, cfg["DASHSCOPE_API_KEY"], timeout)
 
     status, data = _post()
@@ -2201,6 +2218,7 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     # Whatever streaming did or did not manage, republish every section from the
     # finished text so none is left showing as partial.
     if streamer is not None and answer:
+        stream_diag["completed_at"] = round(time.time() - started, 2)
         try:
             streamer.finish(answer)
         except Exception:
@@ -2224,6 +2242,9 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
         "latency_seconds": round(elapsed, 1),
         "access_denied": is_access_denied(status, data),
         "error": None if status == 200 else str(data.get("message") or data)[:300],
+        # Visible on the job and in the saved record, so the next person does not
+        # have to infer from timestamps whether streaming actually happened.
+        "stream_diagnostics": stream_diag,
     }
 
 
