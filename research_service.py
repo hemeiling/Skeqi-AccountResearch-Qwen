@@ -27,6 +27,8 @@ import urllib.request
 import zlib
 from pathlib import Path
 
+import language_view as lang_view
+
 import apollo_service as apollo
 import finance_service as fin
 import people_service as people
@@ -1678,6 +1680,131 @@ def render_evidence(evidence):
         for e in evidence)
 
 
+SECTION_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.M)
+SECTION_FLUSH_SECONDS = 4.0        # buffer partial text; never one write per token
+
+
+def split_report_sections(markdown):
+    """Split a bilingual report into its `## English / 中文` sections.
+
+    The prompt fixes this heading shape, which is what makes progressive output
+    possible at all: a new `## ` line means the previous section is finished.
+    """
+    out = []
+    marks = list(SECTION_RE.finditer(markdown or ""))
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(markdown)
+        heading = m.group(1).strip()
+        en, _, zh = heading.partition("/")
+        out.append({
+            "key": re.sub(r"[^a-z0-9]+", "-", en.strip().lower()).strip("-") or "section-%d" % i,
+            "title_en": en.strip(), "title_zh": zh.strip(),
+            "body": markdown[m.end():end].strip(),
+            "position": i,
+        })
+    return out
+
+
+class SectionStreamer:
+    """Turns a token stream into durable, section-level publications.
+
+    Emits a section as `complete` the moment the NEXT heading starts, and flushes
+    the one still being written as `partial` on a timer. That keeps writes to a
+    handful per run instead of one per token, while the reader still sees text
+    appear as it is produced.
+    """
+
+    def __init__(self, publish, flush_seconds=SECTION_FLUSH_SECONDS):
+        self.publish, self.flush_seconds = publish, flush_seconds
+        self.text, self.done, self.last_flush = "", set(), 0.0
+
+    def feed(self, text):
+        self.text = text
+        secs = split_report_sections(text)
+        if not secs:
+            return
+        batch = []
+        for sec in secs[:-1]:                      # every heading after this one exists
+            if sec["key"] not in self.done and sec["body"]:
+                self.done.add(sec["key"])
+                batch.append(self._row(sec, "complete"))
+        now = time.time()
+        tail = secs[-1]
+        if now - self.last_flush >= self.flush_seconds and tail["body"]:
+            self.last_flush = now
+            batch.append(self._row(tail, "partial"))
+        if batch:
+            self.publish(batch)
+
+    def finish(self, text):
+        """Publish every section from the FINAL text, so nothing is left partial."""
+        self.text = text
+        rows = [self._row(sec, "complete")
+                for sec in split_report_sections(text) if sec["body"]]
+        if rows:
+            self.publish(rows)
+        return rows
+
+    def _row(self, sec, status):
+        body = sec["body"]
+        return {
+            "section_key": sec["key"], "position": sec["position"],
+            "section_title_en": sec["title_en"], "section_title_zh": sec["title_zh"],
+            "content_en": lang_view.select("## {}\n\n{}".format(sec["title_en"], body),
+                                           lang_view.EN),
+            "content_zh": lang_view.select("## {}\n\n{}".format(sec["title_zh"], body),
+                                           lang_view.ZH),
+            "status": status,
+        }
+
+
+def post_json_stream(url, payload, api_key, timeout, on_text):
+    """DashScope native SSE. Returns (status, data) exactly like post_json.
+
+    Streaming is an enhancement, never a dependency: any failure here is returned
+    to the caller, which falls back to the ordinary blocking request.
+    """
+    body = dict(payload)
+    params = dict(body.get("parameters") or {})
+    params["incremental_output"] = True
+    body["parameters"] = params
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": "Bearer " + api_key,
+                 "X-DashScope-SSE": "enable"})
+    acc, last = [], {}
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if not chunk or chunk == "[DONE]":
+                continue
+            try:
+                data = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+            last = data
+            msg = ((data.get("output") or {}).get("choices") or [{}])[0].get("message", {})
+            piece = msg.get("content", "")
+            if not isinstance(piece, str):
+                piece = "".join(p.get("text", "") for p in piece or [])
+            if piece:
+                acc.append(piece)
+                try:
+                    on_text("".join(acc))
+                except Exception:
+                    pass                        # a publish failure must not stop the read
+    text = "".join(acc)
+    if last:
+        # Hand back a normal, non-incremental shape so callers need no special case.
+        last.setdefault("output", {}).setdefault("choices", [{}])
+        last["output"]["choices"][0]["message"] = {"content": text}
+    return 200, (last or {"output": {"choices": [{"message": {"content": text}}]}})
+
+
 ZERO_GROUNDING_NOTICE = """
 
 ---
@@ -1704,7 +1831,7 @@ A short honest report is the correct output here. Do not pad it.
 
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
-               apollo_people=None):
+               apollo_people=None, on_section=None):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -1729,12 +1856,24 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     params = {} if is_multi else {"result_format": "message"}
     started = time.time()
 
+    # Live output. Streaming exists ONLY to publish sections as they are written;
+    # if it is unavailable we fall back to the ordinary blocking request and the
+    # run is unaffected. The finished report is identical either way.
+    streamer = SectionStreamer(on_section) if on_section else None
+
     def _post():
-        return post_json(url, {
+        payload = {
             "model": model,
             "input": {"messages": [{"role": "user", "content": content}]},
             "parameters": params,
-        }, cfg["DASHSCOPE_API_KEY"], timeout)
+        }
+        if streamer is not None:
+            try:
+                return post_json_stream(url, payload, cfg["DASHSCOPE_API_KEY"],
+                                        timeout, streamer.feed)
+            except Exception:
+                pass                    # not available here: take the normal path
+        return post_json(url, payload, cfg["DASHSCOPE_API_KEY"], timeout)
 
     status, data = _post()
     if wrong_endpoint(status, data):
@@ -1750,6 +1889,13 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     body = msg.get("content", "")
     answer = body if isinstance(body, str) else "".join(p.get("text", "") for p in body or [])
     usage = data.get("usage") or {}
+    # Whatever streaming did or did not manage, republish every section from the
+    # finished text so none is left showing as partial.
+    if streamer is not None and answer:
+        try:
+            streamer.finish(answer)
+        except Exception:
+            pass
     # Merge what the model found on the web with what Apollo supplied, on person
     # identity, so one person is one row with all of their provenance.
     domain = urllib.parse.urlparse(website).netloc.replace("www.", "") if website else ""
@@ -1773,7 +1919,8 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
 
 
 def synthesize_with_fallback(model, company, website, evidence, cfg,
-                             timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None):
+                             timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None,
+                             on_section=None):
     """Synthesise with the requested model, falling back on access denial.
 
     An unusable model must not become an empty report: the user asked for
@@ -1787,7 +1934,7 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
     last = None
     for candidate in model_candidates(cfg, preferred=model):
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
-                         apollo_people=apollo_people)
+                         apollo_people=apollo_people, on_section=on_section)
         run["requested_model"] = model
         run["model_used"] = candidate
         run["fallback_used"] = candidate != model

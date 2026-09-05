@@ -89,6 +89,21 @@ degradation explicitly:
 Do not require the user to click **Research Anyway** for ordinary evidence
 limitations. Researching anyway is the default behaviour.
 
+## Incremental output requirement
+
+**Long-running research must provide durable incremental user-visible output
+whenever possible.** Users should be able to see meaningful research progress and
+partial results before the final report completes.
+
+"Durable" is the operative word: partial output is persisted against the job id,
+never held in browser memory, so it survives leaving the page, a refresh and a new
+browser session. Partial output never overwrites the saved report; the final
+validated report remains the source of truth and is written only when synthesis
+succeeds.
+
+Prefer section-level progressive publishing over token-by-token streaming
+complexity. Buffer writes; a live view is not a reason to write once per token.
+
 ## Durability invariant
 
 **Research execution is server-side and durable.** UI navigation, refresh, browser

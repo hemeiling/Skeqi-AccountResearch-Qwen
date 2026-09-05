@@ -19,6 +19,7 @@ import json
 import re
 import tempfile
 import threading
+import urllib.parse
 import urllib.request
 import time
 import uuid
@@ -131,6 +132,67 @@ def _callback_target(job):
     return (job or {}).get("callback_url") or os.environ.get("CRM_CALLBACK_URL") or ""
 
 
+def publish_sections(job_id, sections, stage=None, pct=None):
+    """Push live sections to the CRM, in the background and never blocking.
+
+    Long-running research must show something before it finishes, and that
+    something has to survive leaving the page - so it goes to the CRM's durable
+    store rather than into the browser. Failure here is invisible on purpose:
+    live output is a convenience, and losing it must never affect the run.
+    """
+    if not sections:
+        return
+    payload = {"event": "section", "sections": sections}
+    if stage:
+        payload["stage"] = stage
+    if pct is not None:
+        payload["progress_percent"] = pct
+    threading.Thread(target=notify_crm, args=(job_id, payload), daemon=True).start()
+
+
+def evidence_sections(package):
+    """What retrieval found, published BEFORE synthesis starts.
+
+    Deliberately labelled as evidence rather than findings: these are retrieved
+    sources, not synthesised conclusions, and the UI says so.
+    """
+    ev = package.get("evidence") or []
+    q = package.get("quality") or {}
+    dom = (package.get("website") or "").replace("https://", "").replace("http://", "")
+    dom = dom.replace("www.", "").rstrip("/")
+    third = [e for e in ev if dom and dom not in (e.get("url") or "")]
+    hosts = {urllib.parse.urlparse(e["url"]).netloc.replace("www.", "") for e in third}
+    lines_en = ["**Evidence collected: {} source(s)**".format(len(ev)),
+                "{} independent third-party source(s) across {} host(s)".format(
+                    len(third), len(hosts)), ""]
+    lines_zh = ["**已收集证据：{} 条来源**".format(len(ev)),
+                "其中独立第三方来源 {} 条，来自 {} 个站点".format(len(third), len(hosts)), ""]
+    # `limitations` already carries the blocked-site warning; do not say it twice.
+    for lim in (q.get("limitations") or [])[:6]:
+        msg = lim.get("message", "")
+        if msg:
+            lines_en.append("- {}".format(msg))
+            lines_zh.append("- {}".format(msg))
+    if ev:
+        lines_en.append("")
+        lines_en.append("**Sources found**")
+        lines_zh.append("")
+        lines_zh.append("**已找到来源**")
+        for e in ev[:20]:
+            title = (e.get("title") or e.get("url") or "").strip()[:110]
+            lines_en.append("- {}".format(title))
+            lines_zh.append("- {}".format(title))
+    return [{
+        "section_key": "_evidence",
+        "position": -1,                        # always first: it arrives first
+        "section_title_en": "Research Evidence",
+        "section_title_zh": "研究证据",
+        "content_en": "\n".join(lines_en),
+        "content_zh": "\n".join(lines_zh),
+        "status": "complete",
+    }]
+
+
 def notify_crm(job_id, payload):
     """Best effort, and deliberately silent about its own failures.
 
@@ -205,6 +267,18 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             retrieval_seconds=round(time.time() - t_wall, 1),
             phase="synthesis"))
 
+        # A new run for this job starts from a clean slate.
+        threading.Thread(target=notify_crm,
+                         args=(job_id, {"event": "sections_reset"}), daemon=True).start()
+
+        # Live output, part one: what retrieval actually found. This reaches the
+        # user before synthesis has produced a single word.
+        try:
+            publish_sections(job_id, evidence_sections(package),
+                             stage="evidence", pct=55)
+        except Exception:
+            pass                                # live output is never load-bearing
+
         # NO GENERATION-BLOCKING GATE. Best-effort continuation (CLAUDE.md):
         # evidence quality decides confidence and warnings, never whether a report
         # exists. Thin or absent evidence reaches synthesis in zero-grounding mode,
@@ -219,7 +293,11 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 run = rs.synthesize_with_fallback(
                     model, company, website, package["evidence"], cfg,
                     apollo_people=(package.get("apollo") or {}).get("people"),
-                    progress=lambda m: progress("model", m))
+                    progress=lambda m: progress("model", m),
+                    # Live output, part two: sections reach the CRM as they are
+                    # written, so the user reads the report while it is produced.
+                    on_section=lambda rows: publish_sections(
+                        job_id, rows, stage="model", pct=85))
             except Exception as e:                       # never let one model kill the job
                 run = {"model": model, "model_label": rs.MODEL_LABELS.get(model, model),
                        "status": 0, "report": "", "endpoint": "?", "protocol": "DashScope Native",
