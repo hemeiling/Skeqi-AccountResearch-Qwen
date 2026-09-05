@@ -1050,6 +1050,178 @@ def identity_ok(hay, name, name_cn, domain, url):
     return False, "no identity evidence"
 
 
+# ---------------------------------------------------------------------------
+# Evidence provenance
+# ---------------------------------------------------------------------------
+# Three kinds of evidence, kept apart from query to synthesis so the report can
+# say WHY it believes something rather than asserting a relationship it inferred:
+#
+#   target     verified against the account itself.
+#   ecosystem  verified against a manufacturing partner, contract manufacturer,
+#              supplier or JV that was ITSELF independently connected to the
+#              account first.
+#   market     relevant to the technology or the sector, with no account
+#              relationship shown.
+#
+# The middle one is the reason this exists. For an account that does not build
+# its own products, the automation evidence sits with whoever does - but a
+# company that merely turned up in a search must never be treated as that
+# partner, or a competitor's press release becomes the account's supply chain.
+PROV_TARGET, PROV_ECOSYSTEM, PROV_MARKET = "target", "ecosystem", "market"
+
+# The weakest identity rule accepts a single distinctive token, which is what an
+# industry survey mentioning the company in passing looks like. Still evidence,
+# but not evidence OF the account, so it is labelled rather than discarded.
+_MARKET_REASONS = ("distinctive name token",)
+
+
+def provenance_for_reason(reason):
+    r = (reason or "").lower()
+    return PROV_MARKET if r.startswith(_MARKET_REASONS) else PROV_TARGET
+
+
+# Phrases that assert a production relationship. A name sitting next to one of
+# these in a source that already verified against the TARGET is what promotes a
+# candidate into a trusted ecosystem entity.
+_REL_CUES_EN = (r"supplier", r"suppliers", r"contract manufacturer", r"manufacturing partner",
+                r"assembled by", r"manufactured by", r"produced by", r"builds for",
+                r"final assembly", r"foundry", r"joint venture", r"outsourc\w*")
+_REL_CUES_ZH = ("供应商", "代工", "制造合作伙伴", "合资", "委外", "外包", "组装厂", "生产商")
+
+_ENTITY_EN = re.compile(
+    r"(?:supplier|suppliers|contract manufacturer|manufacturing partner|assembled by|"
+    r"manufactured by|produced by|joint venture with|partners? with)\s+"
+    r"([A-Z][A-Za-z0-9&.\-]{1,20}(?:\s+[A-Z][A-Za-z0-9&.\-]{1,20}){0,2})")
+_ENTITY_ZH = re.compile(r"([\u4e00-\u9fff]{2,10})(?:\s*(?:代工|是其供应商|为其供应|供应商|组装))")
+
+# Words that look like a company after a cue but are not one.
+_ENTITY_STOP = {
+    "the", "a", "an", "its", "our", "their", "this", "that", "these", "those", "all",
+    "such", "certain", "other", "many", "some", "new", "key", "major", "global",
+    "code", "conduct", "responsibility", "list", "network", "chain", "program",
+    "programs", "standards", "requirements", "assessment", "report", "reports",
+}
+
+
+class EcosystemRegistry:
+    """Ecosystem entities that have EARNED the label, and nothing else.
+
+    A name found by search is only ever a candidate. It becomes an entity when a
+    source that itself verified against the target says the two are connected.
+    That ordering - target first, then the relationship, then entity-scoped
+    retrieval - is the whole point: it is what keeps "appeared in a search for
+    this company" from being mistaken for "makes this company's products".
+    """
+
+    def __init__(self, name, name_cn=""):
+        self.name, self.name_cn = name or "", name_cn or ""
+        self._self = {t for t in _name_tokens(self.name) if t}
+        self.candidates = {}          # entity -> [urls it was merely seen in]
+        self.entities = {}            # entity -> {"proof": url, "cue": str}
+
+    # -- discovery ---------------------------------------------------------
+    def _plausible(self, entity):
+        e = (entity or "").strip(" .,:;\u3001\uff0c")
+        if len(e) < 2 or len(e) > 48:
+            return ""
+        low = e.lower()
+        if low in _ENTITY_STOP or all(w in _ENTITY_STOP for w in low.split()):
+            return ""
+        # Never treat the account, or a word of its own name, as its own partner.
+        if _mentions(self.name, e) or (self.name_cn and self.name_cn in e):
+            return ""
+        if low in self._self:
+            return ""
+        return e
+
+    def extract(self, text):
+        """Candidate entity names sitting beside a production cue."""
+        found = []
+        for m in _ENTITY_EN.finditer(text or ""):
+            e = self._plausible(m.group(1))
+            if e:
+                found.append(e)
+        for m in _ENTITY_ZH.finditer(text or ""):
+            e = self._plausible(m.group(1))
+            if e:
+                found.append(e)
+        return found
+
+    def note_candidates(self, text, url):
+        for e in self.extract(text):
+            self.candidates.setdefault(e, [])
+            if url not in self.candidates[e]:
+                self.candidates[e].append(url)
+
+    # -- verification ------------------------------------------------------
+    def verify_from_target_source(self, text, url, max_new=6):
+        """Promote candidates using a source that verified against the TARGET.
+
+        Requires the account and the entity to appear in the SAME source, beside
+        a production cue. Evidence about the entity alone proves nothing about
+        who it builds for.
+        """
+        if not text:
+            return []
+        low = text.lower()
+        if not (_mentions(self.name, text) or (self.name_cn and self.name_cn in text)):
+            return []                       # not actually about the target
+        cue = next((c for c in _REL_CUES_EN if re.search(c, low)), None) \
+            or next((c for c in _REL_CUES_ZH if c in text), None)
+        if not cue:
+            return []
+        new = []
+        for e in self.extract(text):
+            if e in self.entities or len(self.entities) >= 24:
+                continue
+            self.entities[e] = {"proof": url, "cue": cue}
+            new.append(e)
+            if len(new) >= max_new:
+                break
+        return new
+
+    # -- use ---------------------------------------------------------------
+    def verified(self):
+        return sorted(self.entities)
+
+    def match(self, hay):
+        """The verified entity this text is about, if any."""
+        if not hay or not self.entities:
+            return None
+        for e in sorted(self.entities, key=len, reverse=True):
+            if re.search(r"[\u4e00-\u9fff]", e):
+                if e in hay:
+                    return e
+            elif _mentions(e, hay):
+                return e
+        return None
+
+    def report(self):
+        return {"verified": [{"entity": e, "proof": v["proof"], "cue": v["cue"]}
+                             for e, v in sorted(self.entities.items())],
+                "candidates_unverified": sorted(set(self.candidates) - set(self.entities))}
+
+
+def verify_identity(hay, name, name_cn, domain, url, registry=None):
+    """identity_ok, plus the ecosystem allowance layered ON TOP of it.
+
+    Target verification is tried first and is unchanged, so collisions and the
+    existing protections behave exactly as before. Only when that fails does a
+    VERIFIED ecosystem entity get a say, and evidence admitted that way is
+    labelled ecosystem rather than being passed off as evidence of the account.
+    """
+    ok, reason = identity_ok(hay, name, name_cn, domain, url)
+    if ok:
+        return True, reason, provenance_for_reason(reason), None
+    if reason.startswith("unrelated entity"):
+        return False, reason, None, None          # a collision is still a decision
+    if registry is not None:
+        entity = registry.match(hay)
+        if entity:
+            return True, "ecosystem entity ({})".format(entity), PROV_ECOSYSTEM, entity
+    return False, reason, None, None
+
+
 # Hosts whose pages are not evidence about a company however plausible the
 # title looks: social feeds, marketplaces, job boards, directories.
 UNVERIFIABLE_HOSTS = (
@@ -1126,7 +1298,7 @@ def _plausible_host(url):
     return not any(b in host or b in url.lower() for b in UNVERIFIABLE_HOSTS)
 
 
-def dedupe_and_rank(raw, name, name_cn, domain):
+def dedupe_and_rank(raw, name, name_cn, domain, registry=None):
     """Split candidates three ways instead of keeping one and binning the rest.
 
     Tier A - identity confirmed from title/site/URL.
@@ -1155,12 +1327,15 @@ def dedupe_and_rank(raw, name, name_cn, domain):
                 pending[key]["topics"].append(t)
             continue
         hay = "{} {} {}".format(item.get("title", ""), item.get("site_name", ""), url)
-        ok, reason = identity_ok(hay, name, name_cn, domain, url)
+        ok, reason, prov, entity = verify_identity(hay, name, name_cn, domain, url, registry)
         tier, kind = classify(url, domain)
         rec = {"title": item.get("title", ""), "url": url,
                "site_name": item.get("site_name", ""), "tier": tier,
                "source_type": kind, "official": tier <= 2, "hits": 1,
-               "topics": [item["topic"]] if item.get("topic") else []}
+               "topics": [item["topic"]] if item.get("topic") else [],
+               # Provenance travels with the candidate from here to synthesis.
+               "provenance": prov or PROV_TARGET, "entity": entity,
+               "identity_reason": reason}
         if ok:
             by_url[key] = rec
             continue
@@ -1248,13 +1423,17 @@ def evidence_sufficiency(retained, official_domain):
     return state
 
 
-def verify_from_text(text, name, name_cn, url):
-    """Does the PAGE say it is about this company? Same rules as the title test,
-    applied to what the article actually contains."""
+def verify_from_text(text, name, name_cn, url, registry=None):
+    """Does the PAGE say it is about this company - or about a verified partner?
+
+    Same rules as the title test, applied to what the article actually contains.
+    Returns the provenance alongside the verdict so an ecosystem page is never
+    filed as evidence about the account itself.
+    """
     if not text:
-        return False, "no text"
+        return False, "no text", None, None
     head = text[:6000]                     # the lede carries the subject
-    return identity_ok(head, name, name_cn, "", url)
+    return verify_identity(head, name, name_cn, "", url, registry)
 
 
 # ---------------------------------------------------------------------------
@@ -1262,7 +1441,7 @@ def verify_from_text(text, name, name_cn, url):
 # ---------------------------------------------------------------------------
 
 def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
-                   official_text=""):
+                   official_text="", registry=None):
     seeds = []
     if official_url and not any(s["official"] for s in ranked):
         tier, kind = classify(official_url, domain)
@@ -1312,11 +1491,17 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
         # Identity is decided BEFORE the low-tier budget, because whether a page
         # proved it is about this company is exactly what the budget should key on.
         content_verified = False
+        prov = src.get("provenance") or PROV_TARGET
+        entity = src.get("entity")
         if not src["official"]:
-            ok, _reason = identity_ok(text[:4000], name, name_cn, domain, src["url"])
+            ok, _reason, prov2, ent2 = verify_identity(
+                text[:4000], name, name_cn, domain, src["url"], registry)
             if not ok:
                 continue                      # post-fetch disambiguation on body text
             content_verified = True
+            # The body text decides: a title that looked like the account but
+            # reads as a partner's page is ecosystem evidence, not target evidence.
+            prov, entity = prov2 or prov, ent2 or entity
         # The budget exists to keep UNVERIFIED portal chatter out. A low-tier page
         # whose own body text proves it is about this company is evidence, not
         # noise, and is not discarded for its tier alone.
@@ -1333,6 +1518,9 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
             # Third-party + content_verified is what exempts an item from the
             # low-tier budget; nothing else grants the exemption.
             "content_verified": content_verified,
+            # target | ecosystem | market, and which partner when ecosystem.
+            "provenance": prov,
+            "entity": entity,
             # Which research areas this source was found for. Survives into the
             # saved record so coverage gaps become measurable later.
             "topics": src.get("topics") or [],
@@ -1734,11 +1922,29 @@ EVIDENCE:
 """
 
 
+def _prov_line(e):
+    """How this source is connected to the account, in the model's own input.
+
+    Without it the model has to guess whether a supplier page proves an account
+    relationship, and it guesses generously.
+    """
+    prov = e.get("provenance") or PROV_TARGET
+    if prov == PROV_ECOSYSTEM:
+        return ("EVIDENCE ABOUT: {} - a manufacturing partner/supplier independently "
+                "connected to the account. This is NOT direct evidence about the "
+                "account itself.".format(e.get("entity") or "an ecosystem entity"))
+    if prov == PROV_MARKET:
+        return ("EVIDENCE ABOUT: the market or technology. No account relationship "
+                "is shown by this source.")
+    return "EVIDENCE ABOUT: the account itself."
+
+
 def render_evidence(evidence):
     return "\n\n---\n\n".join(
-        "[{id}] {title}\nURL: {url}\nSOURCE TYPE: {st} (priority tier {tier})\nCONTENT:\n{text}".format(
+        "[{id}] {title}\nURL: {url}\nSOURCE TYPE: {st} (priority tier {tier})\n"
+        "{prov}\nCONTENT:\n{text}".format(
             id=e["id"], title=e["title"] or "(untitled)", url=e["url"],
-            st=e["source_type"], tier=e["tier"], text=e["text"])
+            st=e["source_type"], tier=e["tier"], prov=_prov_line(e), text=e["text"])
         for e in evidence)
 
 
@@ -2204,6 +2410,11 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
     name, name_cn = split_company(company)
 
+    # Ecosystem entities earn their status; they are never assumed. Seeded only
+    # from sources that verified against the TARGET, so entity-scoped retrieval
+    # can never start from a name that merely appeared in a search.
+    registry = EcosystemRegistry(name, name_cn)
+
     # Best-effort continuation (see CLAUDE.md). A stage that fails records a
     # structured limitation and the session continues. Nothing in retrieval is
     # allowed to end the run: the only fatal outcomes live at synthesis.
@@ -2237,6 +2448,17 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # and not wrong. Tesla is the case that exposed this: tesla.com matches on the
     # domain, returns nothing to a crawler, and the run used to end as "insufficient
     # web evidence" - a true statement about the wrong thing.
+    # The account's own pages are target-verified by definition, so they are the
+    # safest place to learn who builds for it.
+    if official_text:
+        try:
+            found = registry.verify_from_target_source(official_text, website or "official site")
+            if found:
+                progress("official", "Ecosystem entities named by the account: {}".format(
+                    ", ".join(found[:5])))
+        except Exception:
+            pass                              # discovery is never load-bearing
+
     site_blocked = bool(resolved.get("blocked")) or (
         bool(website) and not official_text and website_status != "unverified")
     timings["official_site"] = round(time.time() - t, 1)
@@ -2335,7 +2557,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
             raw.extend(results)
         if failed < len(plan):
             all_failed = False
-        ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain)
+        ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry)
         interim = assess_evidence(site_evidence, name, name_cn, domain, website_status,
                                   ranked=ranked)
         gained = len(raw) - before
@@ -2393,7 +2615,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                     r.setdefault("topic", "company overview")
                 raw.extend(more)
             queries = queries + short
-            ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain)
+            ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry)
 
     t = time.time()
 
@@ -2417,10 +2639,19 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                                fallback=("", "timeout"))
         for cand, (text, _how) in zip(batch, pages_b):
             b_fetched += 1
-            ok, why = verify_from_text(text, name, name_cn, cand["url"])
+            ok, why, prov, entity = verify_from_text(
+                text, name, name_cn, cand["url"], registry)
             if ok:
                 cand["verified_by"] = "page text: {}".format(why)
                 cand["page_text"] = text
+                cand["provenance"] = prov or cand.get("provenance") or PROV_TARGET
+                cand["entity"] = entity or cand.get("entity")
+                # A page that IS about the account can name its partners.
+                if cand["provenance"] == PROV_TARGET:
+                    try:
+                        registry.verify_from_target_source(text, cand["url"])
+                    except Exception:
+                        pass
                 verified_b.append(cand)
             else:
                 b_failed += 1
@@ -2435,7 +2666,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         try:
             provisional = build_evidence(
                 [r for r in ranked + verified_b if url_key(r["url"]) not in already],
-                name, name_cn, domain, website, None, official_text=official_text)
+                name, name_cn, domain, website, None, official_text=official_text,
+                registry=registry)
             kept, _dropped = apply_evidence_caps(site_evidence, provisional)
             suff = evidence_sufficiency(kept, domain)
         except Exception as e:
@@ -2473,7 +2705,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     web_ranked = [r for r in ranked if url_key(r["url"]) not in already]
     web_evidence = build_evidence(web_ranked, name, name_cn, domain, website,
                                   lambda m: progress("evidence", m),
-                                  official_text=official_text)
+                                  official_text=official_text, registry=registry)
     evidence, dropped = apply_evidence_caps(site_evidence, web_evidence)
     timings["evidence_build"] = round(time.time() - t, 1)
     # Yahoo Finance, for public companies only. The search backend does not
@@ -2639,6 +2871,12 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # Best-effort continuation metadata. `limitations` is the structured record
     # the UI turns into per-stage warnings; `zero_grounding` is the hard signal
     # that synthesis must not write factual prose.
+    prov_counts = {}
+    for e in evidence:
+        k = e.get("provenance") or PROV_TARGET
+        prov_counts[k] = prov_counts.get(k, 0) + 1
+    quality["provenance"] = prov_counts
+    quality["ecosystem"] = registry.report()
     quality["limitations"] = limitations
     quality["zero_grounding"] = zero_grounding
     quality["degraded"] = bool(limitations)
@@ -2659,6 +2897,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,
         "limitations": limitations,
+        "provenance": prov_counts,
+        "ecosystem": registry.report(),
         "zero_grounding": zero_grounding,
         "financial_sources": financial_sources,
         "quality": quality,
