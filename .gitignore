@@ -10,3 +10,8 @@ reports/
 .DS_Store
 *.pyc
 .pytest_cache/
+
+# Local API credential configuration. Holds DashScope / TokenPlan keys in
+# plaintext and must never be committed. The example lives in
+# ai_credentials.env.example; there is no tracked counterpart for this file.
+config.js
