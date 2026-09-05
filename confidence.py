@@ -198,13 +198,17 @@ def is_placeholder(line):
     return len(residue(line)) < _SUBSTANCE_MIN or is_absence_only(line)
 
 
+_BULLET_MARK = re.compile(r"^\s*(?:[-*+]|\d+\.)\s*")
+_BARE_LABEL = re.compile(r"[^\s。;；,，|]{1,14}[:：]")
+
+
 def _strip_unsupported_tag(line):
     """Remove only the 'not enough evidence' badge; verified/likely stay.
 
     Removing a badge can leave orphan punctuation behind - "Expansion: ** ** / **
     **. Historical..." must not render as "Expansion:. Historical...". Separators
-    stranded straight after a colon are cleaned up, and a label left with nothing
-    after it at all is dropped.
+    stranded straight after a colon are cleaned up, and a bullet reduced to
+    nothing but a short label is dropped whole rather than left dangling.
     """
     if NOT_ENOUGH not in verdicts(line):
         return line
@@ -216,10 +220,26 @@ def _strip_unsupported_tag(line):
     for _ in range(2):
         out = re.sub(r"([:：])\s*(?:[/、]\s*)+", r"\1 ", out)
         out = re.sub(r"([:：])\s*[.。;；,，]+\s*", r"\1 ", out)
-    out = re.sub(r"[;；,，.。]?\s*[^\s。;；,，|]{1,14}[:：]\s*$", "", out)
     out = re.sub(r"\s{2,}", " ", out)
     out = re.sub(r"\s+([.。;；,，])", r"\1", out)
-    return out.rstrip(" /、").rstrip()
+    out = out.rstrip(" /、").rstrip()
+    # A bullet whose ONLY remaining content is a short label is filler, and the
+    # whole bullet goes: "Expansion:" on its own says nothing.
+    #
+    # This was a trailing-character rule, r"[^\s。;；,，|]{1,14}[:：]$", with
+    # nothing anchoring its left edge. The 1-14 limit was meant to catch short
+    # labels only, but unanchored it matched the LAST fourteen characters of a
+    # long label instead of failing to match. Chinese has no spaces to stop it,
+    # so it ate real words - "（西门子、ABB、先导、海目星、库卡、发那科等）：" lost
+    # everything after 先 - and English slash-lists went the same way. 28 of the
+    # 37 badge-carrying lines in one report were cut, on every view and PDF,
+    # while the stored report was fine. Anchoring alone was not enough either:
+    # it still took "projects:" off "Major upcoming projects:". The label must
+    # be the WHOLE remaining content, which is what the length limit always
+    # meant.
+    if _BARE_LABEL.fullmatch(_BULLET_MARK.sub("", out).strip()):
+        return ""
+    return out
 
 
 # Some models write the absence as ordinary prose rather than as a badge:
