@@ -534,6 +534,42 @@ def score_official_candidate(url, title, name, name_cn, page_text=""):
     return score, signals
 
 
+def _domain_identity_strong(url, name):
+    """Is this domain, on its own, strong enough identity for an UNREADABLE site?
+
+    Only reached for a domain a person supplied for this account, and only when
+    the page cannot be read at all - so the question is narrow: does the domain
+    itself name the company?
+
+    The old rule was a five-character floor on a substring, which is why
+    ford.com could not be confirmed as Ford Motor Company: "ford" is four. The
+    fix is not a lower floor - "auto" and "tech" are four characters too and
+    identify nothing. It is CORROBORATION: the domain's whole label must BE the
+    company's distinctive word, not merely contain something like it.
+
+      ford.com          label "ford"        == distinctive token "ford"   -> yes
+      fordparts-uk.com  label "fordparts"   != any token                  -> no
+      auto.com          "auto" is an industry word, never distinctive     -> no
+
+    distinctive_tokens() already excludes industry words, so COLLISIONS and the
+    parent/brand separation keep working unchanged.
+    """
+    label = _label_of(url).replace("-", "").replace("_", "")
+    if not label:
+        return ""
+    for t in distinctive_tokens(name):
+        if len(t) >= 3 and label == t:
+            return "domain-is-name:{}".format(t)
+    # The pre-existing substring rule, unchanged, for longer distinctive stems.
+    score, sigs = score_official_candidate(url, "", name, "", "")
+    for sg in sigs:
+        if sg.startswith("domain~name:"):
+            tok = sg.split(":", 1)[1]
+            if len(tok) >= 5 and tok not in WEAK_DOMAIN_TOKENS:
+                return sg
+    return ""
+
+
 def validate_website(url, name, name_cn, supplied=False):
     """Fetch a candidate and decide whether it is really this company's site.
 
@@ -545,16 +581,16 @@ def validate_website(url, name, name_cn, supplied=False):
     """
     text, method = fetch_page_text(url)
     if not text:
-        if method == "blocked":
+        # An unreadable site is a RETRIEVAL state, not an identity verdict. When a
+        # person supplied the domain and the domain itself names the company, that
+        # is identity - however the fetch failed. ford.com blocks crawlers and
+        # returns method="failed", which the old branch never even scored.
+        strong = _domain_identity_strong(url, name) if (supplied or method == "blocked") else ""
+        if strong:
             score, sigs = score_official_candidate(url, "", name, name_cn, "")
-            strong = any(sg.startswith("domain~name:") and len(sg.split(":")[1]) >= 5
-                         and sg.split(":")[1] not in WEAK_DOMAIN_TOKENS for sg in sigs)
-            if score >= 4 and strong:
-                return {"ok": True, "reason": "site_blocked", "score": score,
-                        "signals": sigs + ["blocked-but-domain-matches"],
-                        "text": "", "method": method}
-            return {"ok": False, "reason": "site_blocked", "score": 0, "signals": [],
-                    "text": "", "method": method}
+            return {"ok": True, "reason": "site_blocked", "score": max(score, 4),
+                    "signals": sigs + ["blocked-but-domain-matches", strong],
+                    "identity": [strong], "text": "", "method": method}
         if method == "unreachable":
             return {"ok": False, "reason": "site_unverified", "score": 0, "signals": [],
                     "text": "", "method": method}
@@ -1110,7 +1146,52 @@ def distinctive_tokens(name):
     return [t for t in toks if t not in COMMON_TOKENS]
 
 
-def identity_ok(hay, name, name_cn, domain, url):
+def _label_of(url_or_host):
+    """The registrable domain's own label: hongqi-auto.com -> 'hongqi-auto'."""
+    h = (url_or_host or "")
+    if "://" in h:
+        h = urllib.parse.urlparse(h).netloc
+    h = h.split(":")[0].lower().replace("www.", "").strip(".")
+    reg = registrable_domain("https://" + h) if h else ""
+    return (reg or h).split(".")[0]
+
+
+def derive_aliases(name, name_cn, website, official_text=""):
+    """Latin spellings of the account's OWN name, taken from what the account
+    itself asserts - never guessed and never transliterated.
+
+    Measured 2026-09-05: for 红旗, 21 of 47 identity rejections were pages that
+    write "Hongqi" or "FAW" and never write 红旗 - the account's own site among
+    them. The name is CJK, the coverage is Latin, and nothing bridged them, so
+    real evidence was discarded on script rather than on relevance.
+
+    Two sources only, both controlled by the account:
+      * the stem of the domain a PERSON supplied, or that validated;
+      * a Latin word in that site's identity region that the domain confirms.
+
+    A stem is admitted only when it is distinctive - an industry word like
+    "auto" or "motor" identifies a sector, so it can never become an alias and
+    COLLISIONS keeps working unchanged.
+    """
+    out = []
+    if not website:
+        return out
+    for part in re.split(r"[-_]", _label_of(website)):
+        if len(part) < 3 or part in WEAK_DOMAIN_TOKENS or part in COMMON_TOKENS:
+            continue
+        # Not an alias if it is already a token of the name - that path exists.
+        if part in _name_tokens(name):
+            continue
+        # Corroborate against the site's own identity region when we have it, so
+        # a parked or unrelated domain cannot mint an alias for the account.
+        if official_text and part not in identity_region("", official_text):
+            continue
+        if part not in out:
+            out.append(part)
+    return out[:3]
+
+
+def identity_ok(hay, name, name_cn, domain, url, aliases=()):
     """Does this result plausibly concern the target company?
 
     Two earlier rules lost real coverage. Demanding the FULL name verbatim
@@ -1136,6 +1217,11 @@ def identity_ok(hay, name, name_cn, domain, url):
         return True, "chinese-name match"
     if _mentions(name, hay):
         return True, "full-name match"
+    # The account's own Latin spelling. Reached only after COLLISIONS has had its
+    # say, so an alias can never rescue a known name clash.
+    for a in (aliases or ()):
+        if _mentions(a, low):
+            return True, "alias match ({})".format(a)
     core = core_name(name)
     if core and core.lower() != (name or "").lower() and _mentions(core, hay):
         return True, "name match without legal suffix ({})".format(core)
@@ -1355,7 +1441,7 @@ class EcosystemRegistry:
                 "candidates_unverified": sorted(set(self.candidates) - set(self.entities))}
 
 
-def verify_identity(hay, name, name_cn, domain, url, registry=None):
+def verify_identity(hay, name, name_cn, domain, url, registry=None, aliases=()):
     """identity_ok, plus the ecosystem allowance layered ON TOP of it.
 
     Target verification is tried first and is unchanged, so collisions and the
@@ -1363,7 +1449,7 @@ def verify_identity(hay, name, name_cn, domain, url, registry=None):
     VERIFIED ecosystem entity get a say, and evidence admitted that way is
     labelled ecosystem rather than being passed off as evidence of the account.
     """
-    ok, reason = identity_ok(hay, name, name_cn, domain, url)
+    ok, reason = identity_ok(hay, name, name_cn, domain, url, aliases)
     if ok:
         return True, reason, provenance_for_reason(reason), None
     if reason.startswith("unrelated entity"):
@@ -1451,7 +1537,7 @@ def _plausible_host(url):
     return not any(b in host or b in url.lower() for b in UNVERIFIABLE_HOSTS)
 
 
-def dedupe_and_rank(raw, name, name_cn, domain, registry=None):
+def dedupe_and_rank(raw, name, name_cn, domain, registry=None, aliases=()):
     """Split candidates three ways instead of keeping one and binning the rest.
 
     Tier A - identity confirmed from title/site/URL.
@@ -1480,7 +1566,8 @@ def dedupe_and_rank(raw, name, name_cn, domain, registry=None):
                 pending[key]["topics"].append(t)
             continue
         hay = "{} {} {}".format(item.get("title", ""), item.get("site_name", ""), url)
-        ok, reason, prov, entity = verify_identity(hay, name, name_cn, domain, url, registry)
+        ok, reason, prov, entity = verify_identity(hay, name, name_cn, domain, url,
+                                                  registry, aliases)
         tier, kind = classify(url, domain)
         rec = {"title": item.get("title", ""), "url": url,
                "site_name": item.get("site_name", ""), "tier": tier,
@@ -1650,7 +1737,7 @@ def evidence_sufficiency(retained, official_domain):
     return state
 
 
-def verify_from_text(text, name, name_cn, url, registry=None):
+def verify_from_text(text, name, name_cn, url, registry=None, aliases=()):
     """Does the PAGE say it is about this company - or about a verified partner?
 
     Same rules as the title test, applied to what the article actually contains.
@@ -1660,7 +1747,7 @@ def verify_from_text(text, name, name_cn, url, registry=None):
     if not text:
         return False, "no text", None, None
     head = text[:6000]                     # the lede carries the subject
-    return verify_identity(head, name, name_cn, "", url, registry)
+    return verify_identity(head, name, name_cn, "", url, registry, aliases)
 
 
 # ---------------------------------------------------------------------------
@@ -1668,7 +1755,7 @@ def verify_from_text(text, name, name_cn, url, registry=None):
 # ---------------------------------------------------------------------------
 
 def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
-                   official_text="", registry=None):
+                   official_text="", registry=None, aliases=()):
     seeds = []
     if official_url and not any(s["official"] for s in ranked):
         tier, kind = classify(official_url, domain)
@@ -1722,7 +1809,7 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
         entity = src.get("entity")
         if not src["official"]:
             ok, _reason, prov2, ent2 = verify_identity(
-                text[:4000], name, name_cn, domain, src["url"], registry)
+                text[:4000], name, name_cn, domain, src["url"], registry, aliases)
             if not ok:
                 continue                      # post-fetch disambiguation on body text
             content_verified = True
@@ -2715,6 +2802,13 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # earned target status; anything else an evidence item sits on is a SOURCE
     # domain and never gets promoted for matching the company's name.
     supplied_domain = resolved.get("supplied_website") or ""
+    # P0-C1. The account's own Latin spelling, taken from the domain it asserts
+    # and corroborated by that site's identity region where we could read it.
+    # Derived ONCE here and passed down, so every verification stage sees the
+    # same alias set and none of them invents one.
+    aliases = derive_aliases(name, name_cn, website or supplied_domain, official_text)
+    if aliases:
+        progress("official", "Account also written as: {}".format(", ".join(aliases)))
     if resolved.get("replaced_supplied"):
         limitation("official", "Supplied website {} could not be confirmed as {}'s own "
                                "site; continued with {}".format(
@@ -2840,7 +2934,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
             raw.extend(results)
         if failed < len(plan):
             all_failed = False
-        ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry)
+        ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry,
+                                                   aliases)
         interim = assess_evidence(site_evidence, name, name_cn, domain, website_status,
                                   ranked=ranked)
         gained = len(raw) - before
@@ -2900,7 +2995,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                     r.setdefault("topic", "company overview")
                 raw.extend(more)
             queries = queries + short
-            ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry)
+            ranked, rejected, tier_b = dedupe_and_rank(raw, name, name_cn, domain, registry,
+                                                   aliases)
 
     t = time.time()
 
@@ -2925,7 +3021,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         for cand, (text, _how) in zip(batch, pages_b):
             b_fetched += 1
             ok, why, prov, entity = verify_from_text(
-                text, name, name_cn, cand["url"], registry)
+                text, name, name_cn, cand["url"], registry, aliases)
             if ok:
                 cand["verified_by"] = "page text: {}".format(why)
                 cand["page_text"] = text
@@ -2952,7 +3048,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
             provisional = build_evidence(
                 [r for r in ranked + verified_b if url_key(r["url"]) not in already],
                 name, name_cn, domain, website, None, official_text=official_text,
-                registry=registry)
+                registry=registry, aliases=aliases)
             kept, _dropped = apply_evidence_caps(site_evidence, provisional)
             suff = evidence_sufficiency(kept, domain)
         except Exception as e:
@@ -2990,7 +3086,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     web_ranked = [r for r in ranked if url_key(r["url"]) not in already]
     web_evidence = build_evidence(web_ranked, name, name_cn, domain, website,
                                   lambda m: progress("evidence", m),
-                                  official_text=official_text, registry=registry)
+                                  official_text=official_text, registry=registry,
+                                  aliases=aliases)
     evidence, dropped = apply_evidence_caps(site_evidence, web_evidence)
     timings["evidence_build"] = round(time.time() - t, 1)
     # Yahoo Finance, for public companies only. The search backend does not
@@ -3179,7 +3276,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     timings["retrieval_total"] = round(time.time() - t_all, 1)
     package = {
         "company": company, "website": website, "resolved_alias": name_cn,
-        "supplied_website": supplied_domain,
+        "supplied_website": supplied_domain, "aliases": aliases,
         "website_replaced": bool(resolved.get("replaced_supplied")),
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,
