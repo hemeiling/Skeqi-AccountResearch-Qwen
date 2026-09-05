@@ -208,6 +208,11 @@ CONFIG_KEYS = (
     "APOLLO_API_KEY", "APOLLO_ENRICH_LIMIT",
     "APP_ACCESS_USERNAME", "APP_ACCESS_PASSWORD", "APP_ACCESS_SECRET", "APP_SERVICE_KEY",
     "ALLOWED_FRAME_ANCESTORS",
+    # Retrieval providers beyond the model's own search. Carried through
+    # load_config so a provider is configured the same way as everything else -
+    # environment first, ai_credentials.env as a LOCAL overlay only. Nothing
+    # reads these yet; the Tavily comparison is still an experiment.
+    "TAVILY_MCP_URL", "TAVILY_API_KEY",
 )
 
 REQUIRED_KEYS = ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL",
