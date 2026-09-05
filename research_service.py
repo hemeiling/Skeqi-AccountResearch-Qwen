@@ -444,6 +444,66 @@ def _is_blocked_host(host):
     return any(b in h for b in NOT_OFFICIAL_HOSTS)
 
 
+# How much of a page carries its IDENTITY rather than its contents. A masthead,
+# a title and a copyright line say whose site this is; the body says what the
+# site talks about. Measured 2026-09-05: pcauto.com.cn names 红旗 for the first
+# time at character 885, deep inside a price listing, while hongqi-auto.com
+# announces itself at character 0. Judging identity on 4000 characters cannot
+# tell a company's own site from a portal that merely covers the company.
+IDENTITY_HEAD = 400
+_COPYRIGHT = re.compile(r"(?:\u00a9|\(c\)|copyright|\u7248\u6743\u6240\u6709)[^\n]{0,120}", re.I)
+
+
+def identity_region(title, page_text):
+    """Title, masthead and copyright line - the parts that name the site owner."""
+    text = page_text or ""
+    m = _COPYRIGHT.search(text)
+    return "{} {} {}".format(title or "", text[:IDENTITY_HEAD],
+                             m.group(0) if m else "").lower()
+
+
+def _domain_stems(url):
+    """Word-like parts of the registrable label: hongqi-auto.com -> ['hongqi','auto']."""
+    host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "").split(":")[0]
+    label = host.split(".")[0]
+    return [p for p in re.split(r"[-_]", label)
+            if len(p) >= 4 and p not in WEAK_DOMAIN_TOKENS]
+
+
+def identity_signals(url, title, name, name_cn, page_text, supplied=False):
+    """Evidence that this page belongs to THIS company, not merely mentions it.
+
+    Returns (ok, signals). `supplied` widens the rule for a domain a person gave
+    us for this account: their assertion is the link to the target, so the site
+    only has to prove it is that domain's own coherent site. A DISCOVERED domain
+    gets no such benefit - it has to name the target itself, or encode the name.
+    """
+    reg = identity_region(title, page_text)
+    sigs = []
+    if name and name.lower() in reg:
+        sigs.append("name-in-identity")
+    if name_cn and name_cn in reg:
+        sigs.append("cn-name-in-identity")
+    matched = sum(1 for t in _name_tokens(name) if t in reg)
+    if matched >= 2:
+        sigs.append("tokens-in-identity:{}".format(matched))
+    # A domain that spells out every distinctive token of the name is identity on
+    # its own: energytechsolution.com for Energy Tech Solution needs no page.
+    if _domain_covers_name(url, name):
+        sigs.append("domain-covers-name")
+    ok = bool(sigs)
+    if not ok and supplied:
+        # Cross-script bridge. 红旗's own site is served in English and never
+        # writes 红旗, so no comparison against the name can succeed. But its
+        # masthead says HONGQI, which is its own domain - a coherent corporate
+        # site, which is all a supplied domain has to demonstrate.
+        stems = [st for st in _domain_stems(url) if st in reg]
+        if stems:
+            sigs.append("domain-self-corroborated:{}".format(",".join(stems)))
+            ok = True
+    return ok, sigs
+
+
 def score_official_candidate(url, title, name, name_cn, page_text=""):
     """How likely is this URL the company's own site? Returns (score, signals)."""
     host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
@@ -474,11 +534,14 @@ def score_official_candidate(url, title, name, name_cn, page_text=""):
     return score, signals
 
 
-def validate_website(url, name, name_cn):
+def validate_website(url, name, name_cn, supplied=False):
     """Fetch a candidate and decide whether it is really this company's site.
 
     A host that blocks automation but whose domain distinctively encodes the
     company name is still that company's site; evidence then comes from search.
+
+    `supplied` marks a domain a person entered for this account. It relaxes only
+    the IDENTITY half of the gate, never the quality half - see identity_signals.
     """
     text, method = fetch_page_text(url)
     if not text:
@@ -502,12 +565,23 @@ def validate_website(url, name, name_cn):
                 "text": text, "method": method}
     score, signals = score_official_candidate(url, "", name, name_cn, text)
     # A generic domain token plus ordinary page furniture is not identity:
-    # automation.com is not ACRO. The company must actually be named.
-    named = any(sg in ("name-in-page", "cn-name-in-page") for sg in signals)
-    multi = any(sg.startswith("tokens-in-page:") for sg in signals)
-    ok = score >= 5 and (named or multi)
+    # automation.com is not ACRO. The company must actually be named - and named
+    # where a site says who it IS, not merely somewhere in its contents. A portal
+    # that lists a thousand car brands mentions every one of them.
+    ident_ok, ident_sigs = identity_signals(url, "", name, name_cn, text,
+                                            supplied=supplied)
+    # A domain that encodes the company - either by spelling out its name, or by
+    # having its own masthead confirm its own stem - is identity evidence of the
+    # same weight as the existing domain~name rule, and scores the same 4. The
+    # real hongqi-auto.com scores only 4 on page furniture alone: without this,
+    # a site can prove who it is and still fail the quality gate.
+    bonus = 4 if any(sg == "domain-covers-name"
+                     or sg.startswith("domain-self-corroborated")
+                     for sg in ident_sigs) else 0
+    ok = (score + bonus) >= 5 and ident_ok
     return {"ok": ok, "reason": None if ok else "website_mismatch",
-            "score": score, "signals": signals, "text": text, "method": method}
+            "score": score, "signals": signals + ident_sigs,
+            "identity": ident_sigs, "text": text, "method": method}
 
 
 def guess_domains(name):
@@ -653,7 +727,7 @@ def resolve_website(name, name_cn, website, cfg, timeout, progress=None, trust=F
     progress = progress or (lambda *_a, **_k: None)
     if website:
         url = website if re.match(r"^https?://", website, re.I) else "https://" + website.lstrip("/")
-        v = validate_website(url, name, name_cn)
+        v = validate_website(url, name, name_cn, supplied=True)
         if v["ok"]:
             # A hand-corrected URL stays labelled as such even when it validates,
             # so the row shows who chose it.
@@ -676,7 +750,27 @@ def resolve_website(name, name_cn, website, cfg, timeout, progress=None, trust=F
                                  "continuing with broader web search")
             return {"website": url, "status": "manual", "score": 0,
                     "signals": ["manually-corrected", "unreachable"], "text": ""}
+        # The supplied domain failed identity. Discovery may still find the real
+        # site (bwm.com -> bmw.com.cn is a typo worth correcting), but the swap
+        # is now RECORDED rather than silent: the report and the job both carry
+        # the domain the user gave and the domain that replaced it.
         progress("discover", "Supplied website did not validate - discovering")
+        found = discover_official_website(name, name_cn, cfg, timeout, progress)
+        if found.get("website"):
+            found = dict(found, supplied_website=url, replaced_supplied=True)
+            progress("discover", "WARN supplied website {} was not confirmed for {} - "
+                                 "using discovered {}".format(url, name, found["website"]))
+        else:
+            # Nothing better was found. Keeping the user's domain beats keeping
+            # nothing: it is still the best available pointer at the account, and
+            # it is labelled unconfirmed so nothing downstream trusts it blindly.
+            progress("discover", "WARN no official website confirmed for {} - "
+                                 "keeping supplied {} as unconfirmed".format(name, url))
+            found = {"website": url, "status": "supplied_unconfirmed", "score": v["score"],
+                     "signals": v.get("signals", []) + ["unconfirmed"],
+                     "text": v.get("text") or "", "supplied_website": url,
+                     "replaced_supplied": False}
+        return found
     return discover_official_website(name, name_cn, cfg, timeout, progress)
 
 
@@ -2534,6 +2628,19 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     website_status = resolved["status"]
     official_text = resolved.get("text") or ""
     domain = urllib.parse.urlparse(website).netloc.replace("www.", "") if website else ""
+    # The four domains are not interchangeable and the report must not conflate
+    # them. `supplied` is what a person entered; `website` is the domain that
+    # earned target status; anything else an evidence item sits on is a SOURCE
+    # domain and never gets promoted for matching the company's name.
+    supplied_domain = resolved.get("supplied_website") or ""
+    if resolved.get("replaced_supplied"):
+        limitation("official", "Supplied website {} could not be confirmed as {}'s own "
+                               "site; continued with {}".format(
+                                   supplied_domain, name, website))
+    elif website_status == "supplied_unconfirmed":
+        limitation("official", "Supplied website {} could not be confirmed and no other "
+                               "official site was found; treated as unconfirmed"
+                               .format(supplied_domain))
     if not name_cn and official_text:
         name_cn = _alias_from_text(official_text, name) or name_cn
     # An official site that validates but yields no text is BLOCKED, not absent
@@ -2560,6 +2667,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     progress("official", "Website {}: {}".format(
         {"provided": "confirmed", "auto_discovered": "auto-discovered",
          "manual": "manually corrected",
+         "supplied_unconfirmed": "supplied but unconfirmed",
          "unverified": "could not be verified"}.get(website_status, website_status),
         website or "none"))
 
@@ -2989,6 +3097,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     timings["retrieval_total"] = round(time.time() - t_all, 1)
     package = {
         "company": company, "website": website, "resolved_alias": name_cn,
+        "supplied_website": supplied_domain,
+        "website_replaced": bool(resolved.get("replaced_supplied")),
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,
         "limitations": limitations,
