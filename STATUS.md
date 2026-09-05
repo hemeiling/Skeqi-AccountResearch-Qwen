@@ -2,8 +2,8 @@
 
 > Last updated: 2026-09-05
 > Updated by: Claude
-> Current phase: Production parity on both services; truncation defect CLOSED (§0i)
-> Latest change: display-filter truncation fix (`5dc764f`), live output (`9955236`, CRM `2027d9c`)
+> Current phase: Production parity; cost accounting live; awaiting the first instrumented run
+> Latest change: engine `77049ac`, CRM `0756f48` — both deployed and verified
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -671,6 +671,125 @@ fails 19 of 31 against the old rule. The real-report check is opt-in through
    the "derive one language from the other" pattern the bilingual invariant rules
    out. Live sections already store `content_en` / `content_zh` separately; the
    saved report does not.
+
+---
+
+## 0j. Since the truncation fix — what shipped (2026-09-05/06)
+
+Production: **engine `77049ac`**, **CRM `0756f48`**. Both verified live.
+
+| Commit | Repo | What |
+|---|---|---|
+| `e933467` | engine | Competitor Analysis + Existing Automation Providers derive their subject |
+| `c0ccd13` | engine | Evidence provenance: target / ecosystem / market |
+| `d92acea` | engine | Chinese ecosystem entities need an organisation, not a fragment |
+| `c47a258` | engine | Streaming fallback instrumented instead of swallowed |
+| `77049ac` | engine | Retrieval tokens counted; second price card retired |
+| `3492dbb` | CRM | Terminal states, canonical identity, save_failed recovery |
+| `f2a9a08` | CRM | Identity key stays on the existing join surface |
+| `f3b6a54`/`ef9f59a`/`be8d540` | CRM | Cost accounting through the platform system |
+| `0756f48` | CRM | Sections panel stops repeating each section's heading |
+
+### The 红旗 incident, and what it taught
+
+A real run finished, generated a report and a PDF, then failed to save with
+`cannot derive an identity for "红旗"`. Three distinct defects came out of it.
+
+**1. `normalizeNameKey` stripped CJK.** 红旗, 宁德时代 and 中创新航 all normalised to
+the empty string, so `saveQwenReport` threw. Neon held **zero** reports with a
+Chinese name; every CJK account had silently failed. Fixed, and identity is now
+established ONCE at claim and carried on the job.
+
+The key stays the **normalised name** even when a CRM company exists. That is not
+a claim that names beat domains — it is that the key is the JOIN SURFACE. All 42
+reports are name-keyed, `companies.name_key` is name-keyed, and lookup starts
+from a name. A `crm:<id>` key would have orphaned **33 of 42** reports and turned
+`ON CONFLICT` into duplicate rows. Stronger anchors live beside the key as
+`company_id` and `identity_source`.
+
+**`record.website` is NEVER an identity source.** 红旗 supplied
+`hongqi-auto.com`; retrieval resolved `pcauto.com.cn`, a car portal. A
+record-derived key would have filed the account under "pcauto".
+
+**2. A late callback resurrected a terminal job.** `failQwenJob` ran at
+18:12:28.511; section callbacks until 18:12:28.871 each set `status:'running'`.
+The row ended 85% running WITH a completion time and an error — which is exactly
+why Sessions said 85% Generating while Progress said 100% completed. Terminal
+states are now frozen against heartbeats; explicit transitions still work, which
+is how a save retry completes.
+
+**3. Save failure is not research failure.** `save_failed` is its own state, and
+`POST /api/aresearch/job/:id/retry-save` replays the existing generated record.
+No model call, no retrieval, no regeneration.
+
+**Recovered without rerunning.** The engine still held the record in memory. It
+was backed up first (99,947 bytes, also in the gitignored `reports/_recovery_hongqi/`),
+then replayed. Report `红旗__qwen3-6-flash__20260905181227`: 20,622 chars, 16
+sources, renders and exports a PDF.
+
+### Cost accounting — reusing the platform, not rebuilding it
+
+The CRM already had everything: a versioned per-(provider, model) pricing table
+with effective dates, `recordAiEvent`, and `account_research` as a registered
+feature. **qwen3.6-flash was already priced and already flagged estimated.** The
+Qwen path simply never called any of it.
+
+- `run_search` was reading the provider's usage block and **discarding it**. It is
+  a real model call per query, so a 25-query run reported synthesis tokens only.
+  Now captured. Accounting only — queries, models, fallbacks and evidence are
+  untouched.
+- Every synthesis attempt that executed is recorded with ITS OWN model.
+- **One accounting boundary**: the completion callback. `request_id` is
+  deterministic per (job, kind, index) and the table already had a unique index,
+  so a retried callback, a replay or a retry-save records nothing new.
+- Cost is stored at generation time and never repriced.
+- `batch_service.pricing()` is neutered (returns None) so there is one price card.
+  Its three call sites are untouched and already handled None; `AI_PRICE_*` was
+  never set in production, so no displayed number changed.
+
+**Two cost labels, deliberately:**
+`Est. AI Cost / 预估 AI 成本` for a fully instrumented run;
+`Est. Synthesis Cost / 预估生成成本` for a historical one, with
+"Retrieval cost was not captured for this historical run." 红旗 shows $0.0237
+under the synthesis label. A historical figure necessarily uses the CURRENT price
+row, because none was stored then.
+
+### Section headings were doubling
+
+Every stored section begins with its own title — the engine writes
+`## <title>\n\n<body>` so a section is self-contained, which is right. The panel
+then added its own title. Measured: 19 of 19 sections, both languages.
+
+Fixed at the DISPLAY layer only; nothing stored was rewritten. `stripLeadingTitle`
+removes the first line only when it EQUALS the title after normalising heading
+marks, emphasis, whitespace and trailing punctuation in either script. Equality,
+never "contains". Stripping happens per language before the bilingual join.
+
+### Verified in production, no paid run
+
+16 checks across English, Chinese and bilingual: no section repeats its heading,
+Executive Summary and the following sections carry real content, the saved report
+still has its own `## ` headings, and the stored content still begins with
+`## Executive Summary` — proof the data was not touched.
+
+### NOT done, deliberately
+
+Workstream 2 (process taxonomy / archetype hypothesis expansion) was rejected as
+**NOT WORTH THE ADDED RETRIEVAL** and is not in either repository. Product and
+industry classification worked; public retrieval does not reliably expose
+account ↔ process ↔ provider relationships. Kept only as documentation.
+
+### Open
+
+1. **No instrumented run has happened yet.** The next Account Research run is the
+   first real test of three things at once: retrieval tokens making total usage
+   exceed synthesis alone, `stream_diagnostics` saying why SSE does or does not
+   engage, and the save-failure path under live conditions.
+2. Section publishing is still not progressive — 红旗 published all 19 sections in
+   a 1.08s burst after synthesis, the signature of the streaming fallback.
+3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
+4. Language purity, placeholder asymmetry and the bilingual report architecture
+   (§0i) remain open.
 
 ---
 
