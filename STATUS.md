@@ -1830,3 +1830,83 @@ Suites: `test_continuation.py`, `test_live_output.py`, `test_bilingual_display.p
 3. Live section publishing has not been exercised in production; it needs a real
    run, which is billable. The code is covered locally by 29 checks.
 4. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
+
+---
+
+## P0-A / P0-B — target integrity and evidence diversity (2026-09-05) — IMPLEMENTED, TESTED, NOT DEPLOYED
+
+Engine commits `599f5ca` (P0-A) and `d34b047` (P0-B). Deliberately isolated.
+**Not pushed, not deployed, no paid run.** Awaiting review.
+
+### P0-A `599f5ca` — a validated supplied domain is never silently replaced
+
+Two rules were wrong in opposite directions.
+
+1. Identity was judged over `page_text[:4000]`. A portal that merely covers a
+   company passed: pcauto.com.cn first writes 红旗 at char 885. Identity is now
+   judged on `identity_region()` -- title, first `IDENTITY_HEAD` (400) chars,
+   copyright line.
+2. 红旗's own site is served in English and never writes 红旗, so nothing could
+   bridge the scripts. `identity_signals(..., supplied=True)` adds
+   `domain-self-corroborated`: a domain a PERSON supplied need only show its own
+   stem in its own masthead. A DISCOVERED domain gets no such benefit.
+
+`domain-covers-name` (reuses `_domain_covers_name`) and self-corroboration each
+add +4, matching the existing `domain~name` weight. Without it hongqi-auto.com
+proves its identity and still fails `score >= 5` (it scores 4 on furniture).
+
+`resolve_website` no longer swaps silently: a substitution sets
+`supplied_website` + `replaced_supplied`, warns, and files a `limitation`. When
+discovery finds nothing the user's domain is kept as **`supplied_unconfirmed`**
+(new status) rather than discarded.
+
+> **Measured, do not re-derive.** An earlier candidate rule -- require
+> `domain~name` for every discovered domain -- was measured FIRST and rejected:
+> it wrongly rejects `te.com` (token under 3 chars) and `dfmc.com.cn` (CJK name,
+> acronym domain). Only the identity-region rule is surgical.
+
+Measured over all 41 stored official domains (31 fetchable): **1** loses
+discovered-official status (pcauto.com.cn for 红旗, the bug), **0** supplied
+domains regress, 2 gain it (imautomation.com, comau.com). Both benign historical
+corrections still occur (bwm.com and vw.com are still rejected and corrected).
+
+### P0-B `d34b047` — one publisher cannot consume the evidence set
+
+`apply_evidence_caps` sorted by tier and took the first 16. Anything on the
+resolved domain *including subdomains* is tier 1/2, and there was **no**
+per-domain ceiling anywhere. Third-party evidence was dropped as `evidence cap`
+before the low-tier budget was consulted.
+
+Now two passes: **pass 1** admits in the same tier order but lets no single
+registrable domain exceed `DIVERSITY_PER_DOMAIN`; **pass 2** backfills leftover
+capacity from deferred items. A single-domain account backfills to an identical
+result, so this is never a quota that can fail a run.
+
+`DIVERSITY_PER_DOMAIN = MAX_SITE_PAGES` (8) is **anchored, not picked**: the
+official crawl contributes at most 8 pages, so the whole crawl still lands in
+pass 1 and only search results piling onto the same domain wait. Caps of 4-6
+were measured and disturb the healthy population without reaching more
+concentrated reports.
+
+New `registrable_domain()` is the shared boundary. `evidence_sufficiency` had
+the same hostname bug -- three pcauto subdomains counted as three independent
+hosts -- and now uses it. That makes sufficiency HARDER to reach, i.e. more
+retrieval, never fewer reports. It remains a dial (only `suff["enough"]` breaks
+the retrieval loop; nothing gates synthesis).
+
+Retained items are renumbered in tier order after both passes, so selection
+changed but presentation did not.
+
+**Historical impact** from stored `quality.candidates`: for 7 reports the cap was
+binding AND the pool held far more than was retained -- apple (16 from one
+domain, pool 105), 东风 (119), 红旗 (106), BMW (77), CALB (52), BYD (44),
+Eclipse Automation (22). Pool *composition* is not recoverable because rejected
+candidates are not persisted. That is exactly the P1 work.
+
+### Tests
+
+`test_target_domain.py` (43) and `test_evidence_diversity.py` (36), both
+network-free. 红旗 is covered but NOT special-cased: the same asserts run over
+Cyrillic and Japanese fixtures. All six engine suites green: 28 / 48 / 29 / 25 /
+43 / 36.
+
