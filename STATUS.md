@@ -2,8 +2,8 @@
 
 > Last updated: 2026-09-04
 > Updated by: Claude
-> Current phase: Best-effort continuation adopted (§13); pipeline audit pending your review
-> Latest change: retention exemption (`7f39b83`) and Tesla blocked-site fix (`0c99f98`)
+> Current phase: Best-effort continuation IMPLEMENTED and covered by tests (§0g)
+> Latest change: continuation + zero-grounding (`0e62d05`), Research Sessions (CRM `5bb0494`)
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -504,6 +504,92 @@ run must be diagnosed after the fact, capture the funnel while the job is live.
 **`/healthz` now returns a commit.** It answered `{"ok": true}` with no way to
 tell which build was serving. It reports `RENDER_GIT_COMMIT` when present, else
 git, cached and never raising. `verify_deployment.sh` prints it.
+
+---
+
+## 0g. Best-effort continuation — IMPLEMENTED (2026-09-04)
+
+Committed as `0e62d05`. The principle is in `CLAUDE.md`; this is what changed.
+
+**Every recoverable branch that used to end a run now continues.**
+
+| Branch | Was | Now |
+|---|---|---|
+| `model_access_denied` | raise | warning, continue to financial/contacts/synthesis |
+| `search_unavailable` | raise | warning, continue |
+| `no_company_match` | raise | warning, continue |
+| `site_unverified` | raise | warning, continue |
+| `site_blocked` | raise | warning, continue |
+| `insufficient` | raise | warning, continue |
+| CRM contact lookup throws | killed the run | warning, continue without CRM contacts |
+| Apollo throws | killed the run | warning, keep CRM contacts, continue |
+| Contact merge throws | killed the run | keep the unmerged list |
+| Tier B verification throws | killed the run | keep confirmed sources, stop verifying |
+
+`build_shared_evidence` no longer contains a single `raise RetrievalError`.
+
+**Structured limitations.** Each degraded stage appends
+`{stage, status, message}` to a `limitations` list carried on the package and on
+`quality`, so the UI shows per-stage degradation instead of one opaque failure.
+
+### ZERO-GROUNDING MODE
+
+Continuation is unconditional; invention is not. With no surviving evidence the
+run still attempts financial lookup, CRM contacts and Apollo, and only then
+synthesises with an explicit notice that it has no grounding. Factual sections
+must read **"Insufficient verified public evidence / 缺乏足够的已验证公开信息"**
+rather than infer. The notice is derived from the evidence set itself, so it can
+never disagree with what was actually retrieved. Contact directories and SKEQI's
+own capabilities are still written normally: neither depends on researching the
+company.
+
+### Terminal states
+
+The generation-blocking quality gate is gone, and with it "Generate Anyway" —
+researching anyway is the default. Runs report `completed`, or
+`completed_with_limitations` when anything degraded.
+
+**Inverse violation fixed.** If every synthesis model failed, the job was marked
+`done` with no report. It is now `synthesis_failed`, the one genuinely fatal
+execution outcome, and the retrieval package is preserved so synthesis can be
+retried **without paying for research again**.
+
+`needs_review` is no longer produced.
+
+### Regression coverage — `test_continuation.py`
+
+28 checks, no network and no model call: `.venv/bin/python test_continuation.py`.
+Covers every converted branch, zero-grounding prompt behaviour, the retention
+policy, and the three terminal states. Includes **static guards** that fail if
+`raise RetrievalError` returns to the pipeline or the blocking gate returns to
+`app.py`.
+
+---
+
+## 0h. Research Sessions — CRM (2026-09-04)
+
+CRM commit `5bb0494` on `account-research-qwen`. Reuses the existing durable job
+table; no second, browser-only tracker was built.
+
+- `db.listRecentQwenJobs` — live jobs plus the last 24 hours, with staleness and
+  elapsed computed in SQL.
+- `GET /api/aresearch/sessions` — those rows with a **server-derived `state`**, so
+  every client shares one vocabulary: `queued`, `researching`, `generating`,
+  `completed`, `completed_with_limitations`, `synthesis_failed`, `interrupted`,
+  `failed`.
+- A **Research Sessions / 研究任务** list above the existing detailed progress
+  panel, which is unchanged and now driven by the selected session. Multiple
+  concurrent sessions are listed independently.
+- Re-read from Neon on every entry to the tab; polled every 3s only while
+  something is live.
+
+**Nothing in the sessions UI can start a job.** Selecting only reads; Regenerate
+goes through `startOrAttachJob`, which attaches to a live run, and the partial
+unique index in Neon refuses a duplicate behind it.
+
+Verified in headless Chromium against live Neon, 12 checks: the list renders,
+selecting opens the detailed panel, sessions survive a full reload, and neither
+selecting nor reloading issues a research POST.
 
 ---
 
@@ -1426,62 +1512,50 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Retrieval quality — Tier B verification, identity matching, adaptive fetching.**
-Commit `f560b63`, engine, `research_service.py` only. Full detail in §0e.
+**Best-effort continuation, zero-grounding mode and Research Sessions.**
 
-| Area | Change |
-|---|---|
-| Identity | `_mentions()` ASCII edges — `\b` never fired against CJK, rejecting every Chinese page |
-| Identity | `core_name()` strips legal suffixes; `distinctive_tokens()` filters generic industry words |
-| Identity | Token match uses `_mentions()`, not substring — `"acro" in "macro"` was matching |
-| Identity | Narrow `COLLISIONS` entry for ACRO / Suzhou; "Suzhou" alone never rejects a page |
-| Tier B | Second-tier candidates fetched and verified against page text instead of discarded |
-| Tier B | Measured category order financial → news → other → government, via `TIER_B_CATEGORY_ORDER` |
-| Tier B | Job boards and marketplaces added to `UNVERIFIABLE_HOSTS` |
-| Adaptive | Batches of 10 to a 30 ceiling; stop on sufficient / exhausted / ceiling |
-| Sufficiency | Policy A on the **retained** set: ≥4 third-party, ≥3 hosts, ≥2 categories, official excluded |
-| Performance | Tier A page text cached on the candidate — Manz 197s → 164s |
-| Metadata | Query-label topic attribution on candidates and evidence; no prompt change |
+| Commit | Repo | What |
+|---|---|---|
+| `7f39b83` | engine | Verified third-party evidence survives the low-tier budget |
+| `0c99f98` | engine | Blocked official site is a state; financials before the guard |
+| `25a32f4` | engine | Continuation principle into `CLAUDE.md` |
+| `e135a89` | engine | STATUS.md: retention + Tesla results |
+| `0e62d05` | engine | Continuation implemented; zero-grounding; terminal states; tests |
+| `5bb0494` | CRM | Research Sessions on the durable job table |
 
-**Measured before → after, verified third-party sources at 10 fetches:**
-Verkor 6/14 → 10/14, Manz AG 0/14 → 8/14, ACRO 0/14 → 6/14.
+Details in §0e (retention), §0f (Tesla), §0g (continuation), §0h (sessions).
 
-**Not changed, deliberately:** evidence caps, prompts, model routing, synthesis,
-Apollo, Yahoo Finance, persistence. The caps are the next decision (§0e).
-
-### Verified — retrieval only, no synthesis, no paid generation
-Three-company corrected run with checkpoints at 10 / 20 / 30 Tier B fetches.
-Verkor stops at the first batch on sufficiency. Manz and ACRO run to the ceiling.
-No report was generated and no synthesis model was called for any of this work.
+**Verified.** 28 engine regression checks with no network and no model call, and
+12 headless-Chromium checks against live Neon. No paid research run was used for
+any of this work.
 
 ---
 
 ## 15. Current Work In Progress
 
-**Retrieval quality** — committed `f560b63`, **NOT pushed**. Pushing redeploys the
-Render engine, which changes live behaviour, so it is held for your approval.
+**Render redeploy** — `0e62d05` is pushed. The service at
+`https://skeqi-accountresearch-qwen.onrender.com` still answers `{"ok": true}`
+with no `version`, so it is running a build older than `0c99f98`. Auto-deploy may
+be off, or the build may still be running. **This is the open item.**
 
-**Evidence retention policy** — **NOT STARTED.** Diagnosed and quantified (§0e);
-no code changed. This is the open decision.
+**CRM branch** — `account-research-qwen`, not merged to `main`.
 
-**CRM** (`account-research-qwen`) — durable jobs, batch durability, CRM-first
-contacts and the UI port are all implemented and verified against live Neon.
-
-**Render deployment** — engine redeploy for `f560b63` not performed.
-`CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
+**Local engines** — the two processes on 5057 and 5062 started 2026-09-03 and
+run PRE-continuation code. They must be restarted to pick up `0e62d05`. They are
+the user's processes; do not restart them without asking.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. **Decide the retention policy** (§0e). Recommended: exempt *verified*
-   third-party sources from the low-tier budget, or classify verified
-   financial/news above tier 6. This is the current ceiling on report quality.
-2. **Push `f560b63`** and confirm the Render engine redeploys.
-3. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render.
-4. Re-measure the three companies after the retention change and confirm Manz
-   stops early instead of burning 30 fetches.
-5. PowerCo has still never run; the batch queue lives in the browser tab.
+1. **Confirm the Render deploy.** `/healthz` must report `version: 0e62d05`. If it
+   stays `{"ok": true}`, check that auto-deploy is enabled for `main`.
+2. Restart the local engines so the CRM exercises the new pipeline.
+3. Run ONE live company end to end and confirm it reaches a report rather than a
+   terminal state. Tesla is the natural choice: it now has financial evidence and
+   a blocked-site warning.
+4. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render.
+5. PowerCo has still never run.
 
 ---
 
@@ -1535,33 +1609,32 @@ contacts and the UI port are all implemented and verified against live Neon.
 ## 18. Session Handoff
 
 **Last successful operation:**
-Corrected three-company retrieval run with checkpoints at 10 / 20 / 30 Tier B
-fetches, then commit `f560b63`. Retrieval only — no synthesis, no paid generation.
+Research Sessions verified in headless Chromium against live Neon (12 checks),
+and the engine continuation suite at 28 checks. Engine pushed through `0e62d05`.
 
 **Current stopping point:**
-The retrieval-quality work is **committed and NOT pushed**. The retention-policy
-change is **NOT STARTED** and is the open decision, fully quantified in §0e.
+All requested work is implemented, tested and committed. The single open item is
+**the Render deploy**: the service still answers `{"ok": true}` with no `version`,
+so it has not picked up `0c99f98` or later.
 
 **The one thing to know:**
-Retrieval is no longer the bottleneck; **retention is**. Tier B verification now
-finds verified third-party sources, and `apply_evidence_caps` then discards them
-— specifically the Chinese financial hosts that verify at 54%, the best-yielding
-category. Manz AG loses 4 such sources, each adding a new host, a new category
-and new topics, so it can never satisfy its own sufficiency rule.
+The pipeline is now best-effort. Nothing in retrieval can end a session; the only
+fatal execution outcome is `synthesis_failed`. If you are tempted to add a guard,
+read the top of `CLAUDE.md` first, then `test_continuation.py`, which will fail if
+fail-fast returns.
 
 **Recommended next command/action:**
-Decide the retention policy, then push. Do not re-measure retrieval before
-changing retention; the retrieval numbers in §0e are clean and current.
+`curl -s https://skeqi-accountresearch-qwen.onrender.com/healthz` and confirm the
+version. Then restart the local engines and run one live company.
 
-**Uncommitted changes:** `STATUS.md` only. `research_service.py` is committed.
+**Uncommitted changes:** `STATUS.md` only.
 
 **Application currently runnable:** Yes. `PORT=5062 .venv/bin/python app.py`.
-Chrome refuses port 5061 as unsafe; 5057 and 5062 are fine.
+Regression suite: `.venv/bin/python test_continuation.py`.
 
 **Known blockers / limitations:**
-1. Evidence caps discard verified third-party evidence (§0e) — open decision.
-2. ACRO is thinly covered at source; more fetching will not fix it.
-3. `f560b63` is not pushed, so Render still runs the previous engine.
-4. Live research costs tokens. Do not run Generate or Refresh to test UI.
-5. In-flight batches live in the browser tab; PowerCo never ran.
-6. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
+1. Render has not redeployed; the deployed engine predates the Tesla fix.
+2. Local engines run pre-continuation code until restarted.
+3. ACRO is thinly covered at source; that is the index, not the filter.
+4. Live research costs tokens. Do not run it to test UI.
+5. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
