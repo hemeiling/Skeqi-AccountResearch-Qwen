@@ -205,19 +205,11 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             retrieval_seconds=round(time.time() - t_wall, 1),
             phase="synthesis"))
 
-        # Hard quality guard: never spend tokens turning nothing into a
-        # confident-looking 19-section report. The user decides explicitly.
-        if quality.get("blocking") and not force:
-            quality["can_force"] = True
-            update(job_id, lambda j: j.update(
-                status="needs_review", phase="needs_review",
-                message="Research retrieval incomplete.",
-                wall_seconds=round(time.time() - t_wall, 1)))
-            # Not a failure and not a report: nothing is stored, and the job is
-            # closed so it stops blocking the next attempt for this company.
-            notify_crm(job_id, {"event": "failed",
-                                "error": "Retrieval incomplete - nothing was generated."})
-            return
+        # NO GENERATION-BLOCKING GATE. Best-effort continuation (CLAUDE.md):
+        # evidence quality decides confidence and warnings, never whether a report
+        # exists. Thin or absent evidence reaches synthesis in zero-grounding mode,
+        # where the prompt forbids factual prose, so there is nothing left for the
+        # user to "Research anyway" past.
 
         def run_model(model):
             started = time.time()
@@ -257,30 +249,61 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(models)) as pool:
             list(pool.map(run_model, models))
 
+        with JOBS_LOCK:
+            snap = dict(JOBS.get(job_id) or {})
+        produced = [m for m in (snap.get("models") or {}).values()
+                    if m.get("status") == "complete" and m.get("result")]
+
+        # The one genuinely fatal execution outcome. Retrieval degrading is a
+        # limitation; being unable to synthesise at all after every configured
+        # fallback is a failure, and used to be reported as "done" with no report.
+        # The evidence package stays on the job so synthesis can be retried
+        # WITHOUT paying for retrieval again.
+        if not produced:
+            denied = any(m.get("status") == "access_denied"
+                         for m in (snap.get("models") or {}).values())
+            update(job_id, lambda j: j.update(
+                status="synthesis_failed", phase="synthesis_failed",
+                message=("No configured model could be reached for synthesis."
+                         if denied else
+                         "Every synthesis model failed. Retrieval is preserved; "
+                         "synthesis can be retried without re-running research."),
+                retrieval_preserved=True,
+                wall_seconds=round(time.time() - t_wall, 1)))
+            notify_crm(job_id, {"event": "synthesis_failed",
+                                "company_name": company, "website": website,
+                                "error": "Synthesis failed after all fallbacks. "
+                                         "Retrieval evidence preserved."})
+            return
+
+        limited = bool(quality.get("degraded") or quality.get("zero_grounding"))
         update(job_id, lambda j: j.update(
             status="done", phase="done",
+            outcome="completed_with_limitations" if limited else "completed",
+            limitations=quality.get("limitations") or [],
+            zero_grounding=bool(quality.get("zero_grounding")),
             wall_seconds=round(time.time() - t_wall, 1)))
 
         # The report is finished. Hand it to the CRM to store; this is the ONLY
         # path by which a completed run reaches Neon.
-        with JOBS_LOCK:
-            snap = dict(JOBS.get(job_id) or {})
         saved_any = False
-        for m in (snap.get("models") or {}).values():
-            if m.get("status") == "complete" and m.get("result"):
-                ok, detail = notify_crm(job_id, {
-                    "event": "completed",
-                    "company_name": company,
-                    "website": website,
-                    "model": m.get("model"),
-                    "record": m["result"],
-                    "warnings": [st["message"] for st in (snap.get("stages") or [])
-                                 if str(st.get("message", "")).startswith("WARN")],
-                })
-                saved_any = saved_any or ok
-                update(job_id, lambda j, ok=ok, d=detail:
-                       j.update(crm_persisted=ok, crm_detail=d))
-        if not saved_any and (snap.get("models") or {}):
+        for m in produced:
+            ok, detail = notify_crm(job_id, {
+                "event": "completed",
+                "company_name": company,
+                "website": website,
+                "model": m.get("model"),
+                "record": m["result"],
+                "outcome": "completed_with_limitations" if limited else "completed",
+                "limitations": quality.get("limitations") or [],
+                "zero_grounding": bool(quality.get("zero_grounding")),
+                "warnings": [st["message"] for st in (snap.get("stages") or [])
+                             if str(st.get("message", "")).startswith("WARN")],
+            })
+            saved_any = saved_any or ok
+            update(job_id, lambda j, ok=ok, d=detail:
+                   j.update(crm_persisted=ok, crm_detail=d))
+        if not saved_any and produced:
             # Say so loudly on the job: the run cost money and may not be stored.
             update(job_id, lambda j: j.update(
                 crm_persisted=False,

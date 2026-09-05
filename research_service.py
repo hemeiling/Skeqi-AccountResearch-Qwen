@@ -1678,6 +1678,31 @@ def render_evidence(evidence):
         for e in evidence)
 
 
+ZERO_GROUNDING_NOTICE = """
+
+---
+
+CRITICAL - NO VERIFIED EVIDENCE WAS RETRIEVED FOR THIS COMPANY.
+
+Every retrieval path was attempted and none produced a verifiable public source.
+You therefore have NO grounding for any factual claim about this company.
+
+You MUST NOT:
+- state facts about this company from prior knowledge or inference;
+- guess its products, size, ownership, customers, plants, finances or strategy;
+- present anything above as if it had been researched.
+
+For every factual section, write exactly:
+  Insufficient verified public evidence / 缺乏足够的已验证公开信息
+
+Two things you MAY still write normally:
+- any contact directory supplied below, which is structured data we already hold;
+- SKEQI's own capabilities, which do not depend on researching this company.
+
+A short honest report is the correct output here. Do not pad it.
+"""
+
+
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
                apollo_people=None):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
@@ -1691,6 +1716,12 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
         company=company, site=" (website: {})".format(website) if website else "",
         capabilities=SKEQI_CAPABILITIES,
     ) + render_evidence(evidence)
+    # ZERO-GROUNDING MODE. Derived from the evidence set itself so it can never
+    # disagree with what was actually retrieved. Continuation is unconditional;
+    # inventing facts is not. Say the words rather than let the model fill gaps
+    # from parametric memory.
+    if not evidence:
+        prompt += ZERO_GROUNDING_NOTICE
     block = people.to_prompt_block(apollo_people or [], company)
     if block:
         prompt += "\n\n---\n\n" + block
@@ -1964,6 +1995,16 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
     name, name_cn = split_company(company)
 
+    # Best-effort continuation (see CLAUDE.md). A stage that fails records a
+    # structured limitation and the session continues. Nothing in retrieval is
+    # allowed to end the run: the only fatal outcomes live at synthesis.
+    limitations = []
+
+    def limitation(stage, message, status="degraded"):
+        limitations.append({"stage": stage, "status": status, "message": message})
+        progress(stage, "WARN {}".format(message))
+        return None
+
     # Public/private status and ticker resolve while the official website is being
     # fetched, so this costs no extra wall-clock. It never raises: a failure means
     # "treat as private", and private companies are never forced through Yahoo.
@@ -2117,14 +2158,16 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
     timings["web_retrieval"] = round(time.time() - t, 1)
     retrieval_blocked = bool(denied_models) and wave_no == 0
-    if retrieval_blocked and not site_evidence:
-        raise RetrievalError("model_access_denied", "{} ({})".format(
-            FAILURE_REASONS["model_access_denied"], ", ".join(denied_models)))
     if retrieval_blocked:
-        progress("search", "Web search unavailable - no model this account can call. "
-                           "Continuing on official-website evidence only.")
+        # Search being unavailable is a degraded capability, not a dead session.
+        # Financial lookup, CRM contacts and Apollo are all still reachable, and
+        # an official site we already read is still evidence.
+        limitation("search", "{} ({})".format(
+            FAILURE_REASONS["model_access_denied"], ", ".join(denied_models)), "unavailable")
+        if site_evidence:
+            progress("search", "Continuing on official-website evidence only")
     if all_failed and not raw and not site_evidence and not retrieval_blocked:
-        raise RetrievalError("search_unavailable", FAILURE_REASONS["search_unavailable"])
+        limitation("search", FAILURE_REASONS["search_unavailable"], "unavailable")
 
     # Widen with short, unrestricted company-name queries before giving up.
     if len(ranked) < 8:
@@ -2178,11 +2221,20 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         # third-party evidence. Counting verified candidates alone was wrong in
         # both directions: it ignored Tier A, and it credited Tier B sources the
         # caps were about to discard.
-        provisional = build_evidence(
-            [r for r in ranked + verified_b if url_key(r["url"]) not in already],
-            name, name_cn, domain, website, None, official_text=official_text)
-        kept, _dropped = apply_evidence_caps(site_evidence, provisional)
-        suff = evidence_sufficiency(kept, domain)
+        # Everything confirmed so far is already in verified_b. If re-evaluating
+        # sufficiency throws, keep that and stop verifying rather than losing it.
+        try:
+            provisional = build_evidence(
+                [r for r in ranked + verified_b if url_key(r["url"]) not in already],
+                name, name_cn, domain, website, None, official_text=official_text)
+            kept, _dropped = apply_evidence_caps(site_evidence, provisional)
+            suff = evidence_sufficiency(kept, domain)
+        except Exception as e:
+            limitation("verify", "Evidence verification stopped early ({}) - keeping the "
+                                 "{} source(s) already confirmed".format(
+                                     type(e).__name__, len(verified_b)))
+            stop_reason = "verification error"
+            break
         progress("verify", "Content verification - {} of {} uncertain source(s) confirmed; "
                            "retained evidence: {} ({} third-party across {} host(s), "
                            "{} categor(ies))".format(
@@ -2236,17 +2288,26 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         else:
             progress("evidence", "Yahoo Finance page unavailable for {}".format(listing["ticker"]))
 
-    # Judged only now, with financial evidence included. A blocked official site
-    # is reported as exactly that, and only when nothing else was found either.
-    if not evidence:
-        ctx = {"website": website, "website_status": website_status}
+    # Judged only now, with financial evidence included. An empty evidence set is
+    # a LIMITATION, not a terminal state: contacts and synthesis still run, and
+    # the run is recorded completed_with_limitations. What changes is that
+    # synthesis is told, explicitly, that it has nothing to stand on.
+    #
+    # ZERO-GROUNDING MODE. Continuation is unconditional; inventing facts is not.
+    # No evidence means the factual sections must say so rather than infer.
+    zero_grounding = not evidence
+    if zero_grounding:
         if website_status == "unverified" and not ranked:
-            raise RetrievalError("no_company_match", FAILURE_REASONS["no_company_match"], **ctx)
-        if website_status == "unverified":
-            raise RetrievalError("site_unverified", FAILURE_REASONS["site_unverified"], **ctx)
-        if site_blocked:
-            raise RetrievalError("site_blocked", FAILURE_REASONS["site_blocked"], **ctx)
-        raise RetrievalError("insufficient", FAILURE_REASONS["insufficient"], **ctx)
+            reason = "no_company_match"
+        elif website_status == "unverified":
+            reason = "site_unverified"
+        elif site_blocked:
+            reason = "site_blocked"
+        else:
+            reason = "insufficient"
+        limitation("evidence", FAILURE_REASONS[reason], "unavailable")
+        progress("evidence", "No verified public evidence - continuing to contacts "
+                             "and synthesis in zero-grounding mode")
 
     yahoo_urls = [e["url"] for e in evidence if "finance.yahoo.com" in e["url"].lower()]
     financial_sources = {
@@ -2288,7 +2349,12 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # The CRM's own records cost nothing and carry emails we already verified.
     # Apollo is a gap-filler, not the first call. `known_contacts` is attached
     # by the CRM proxy; running the engine standalone simply gets none.
-    crm_people = people.from_crm(known_contacts or [])
+    try:
+        crm_people = people.from_crm(known_contacts or [])
+    except Exception as e:
+        crm_people = []
+        limitation("contacts", "CRM contact lookup failed ({}) - continuing without it"
+                               .format(type(e).__name__))
     apollo_usage["crm_contacts_supplied"] = len(known_contacts or [])
     apollo_usage["crm_contacts_relevant"] = len(crm_people)
     if crm_people:
@@ -2305,27 +2371,44 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         # Stage 1: search (no credit cost) -> rank -> stage 2: enrich only the top
         # contacts. Enriching everything Apollo returns would cost ~100 credits a
         # company for people nobody would ever contact.
-        raw_people, apollo_usage = apollo.search_people(name, domain, cfg, apollo_usage)
-        apollo_people = people.from_apollo(raw_people)      # scored and ranked
-        apollo_usage["people_retained"] = len(apollo_people)
-        progress("apollo", "Apollo: {} candidates returned, {} relevant after ranking{}".format(
-            apollo_usage["people_returned"], len(apollo_people),
-            "" if apollo_usage["status"] == "ok"
-            else " ({})".format(apollo_usage["status"])))
-        if apollo_people:
-            limit = apollo.enrich_limit(cfg)
-            progress("apollo", "Apollo: enriching top {} contacts for business email".format(
-                min(limit, len(apollo_people))))
-            apollo_people = apollo.enrich_people(apollo_people, cfg, apollo_usage, limit)
-            progress("apollo", "Apollo: {} enriched, {} email(s) found ({} verified)".format(
-                apollo_usage["people_enriched"], apollo_usage["emails_found"],
-                apollo_usage["emails_verified"]))
+        #
+        # Apollo is an enrichment, never a dependency. Any failure here leaves the
+        # CRM contacts we already have and the session continues.
+        try:
+            raw_people, apollo_usage = apollo.search_people(name, domain, cfg, apollo_usage)
+            apollo_people = people.from_apollo(raw_people)      # scored and ranked
+            apollo_usage["people_retained"] = len(apollo_people)
+            progress("apollo", "Apollo: {} candidates returned, {} relevant after ranking{}".format(
+                apollo_usage["people_returned"], len(apollo_people),
+                "" if apollo_usage["status"] == "ok"
+                else " ({})".format(apollo_usage["status"])))
+            if apollo_people:
+                limit = apollo.enrich_limit(cfg)
+                progress("apollo", "Apollo: enriching top {} contacts for business email".format(
+                    min(limit, len(apollo_people))))
+                apollo_people = apollo.enrich_people(apollo_people, cfg, apollo_usage, limit)
+                progress("apollo", "Apollo: {} enriched, {} email(s) found ({} verified)".format(
+                    apollo_usage["people_enriched"], apollo_usage["emails_found"],
+                    apollo_usage["emails_verified"]))
+        except Exception as e:
+            apollo_people = []
+            apollo_usage["status"] = "error: {}".format(type(e).__name__)
+            limitation("apollo", "Apollo unavailable ({}) - {}".format(
+                type(e).__name__,
+                "CRM contacts used" if crm_people else "continuing without contacts"),
+                "unavailable")
     else:
         progress("apollo", "Apollo: not configured - web research only")
         apollo_usage["status"] = "not_configured"
     # Source priority is the order here: CRM first, then Apollo as the filler.
-    apollo_people = people.merge(crm_people, apollo_people, limit=40) if crm_people \
-        else apollo_people
+    try:
+        apollo_people = people.merge(crm_people, apollo_people, limit=40) if crm_people \
+            else apollo_people
+    except Exception as e:
+        # Losing the merge must not lose the contacts: keep whichever list we have.
+        apollo_people = crm_people or apollo_people
+        limitation("contacts", "Contact merge failed ({}) - using the unmerged list"
+                               .format(type(e).__name__))
 
     # ---- One closing line that states the OUTCOME -------------------------
     # "unavailable" told the reader nothing: 0 CRM contacts because the company
@@ -2344,6 +2427,12 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # A state the report and the UI should both be able to say out loud, so a
     # thin official section is explained rather than looking like a gap.
     quality["site_blocked"] = site_blocked
+    # Best-effort continuation metadata. `limitations` is the structured record
+    # the UI turns into per-stage warnings; `zero_grounding` is the hard signal
+    # that synthesis must not write factual prose.
+    quality["limitations"] = limitations
+    quality["zero_grounding"] = zero_grounding
+    quality["degraded"] = bool(limitations)
     quality["web_sources"] = len(evidence) - len(site_evidence)
     progress("quality", "{} unique sources retained - evidence {}{}".format(
         len(evidence), quality["level"],
@@ -2360,6 +2449,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         "company": company, "website": website, "resolved_alias": name_cn,
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,
+        "limitations": limitations,
+        "zero_grounding": zero_grounding,
         "financial_sources": financial_sources,
         "quality": quality,
         "apollo": {"usage": apollo_usage, "people": apollo_people},

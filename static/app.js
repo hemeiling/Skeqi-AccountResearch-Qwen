@@ -414,8 +414,6 @@ function needsReviewHtml(j) {
       <div class="incactions">
         <button id="retryexpanded" class="primary">Retry Expanded Search / 扩大检索重试</button>
         <button id="editurl" class="mini ghost">Edit URL / 修改官网</button>
-        ${q.can_force === false ? "" :
-          '<button id="genanyway" class="mini ghost">Generate Anyway / 仍然生成</button>'}
       </div>
       <div id="editurlbox" class="editurlbox" hidden>
         <input id="newurl" type="url" placeholder="https://company.com" value="${esc(j.website || "")}">

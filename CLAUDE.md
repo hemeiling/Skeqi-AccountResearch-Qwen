@@ -89,6 +89,19 @@ degradation explicitly:
 Do not require the user to click **Research Anyway** for ordinary evidence
 limitations. Researching anyway is the default behaviour.
 
+## Durability invariant
+
+**Research execution is server-side and durable.** UI navigation, refresh, browser
+closure or reconnect must never cause the user to lose visibility into an
+already-started research session, or accidentally start a duplicate paid job.
+
+Neon is the source of truth for job state, never browser memory, never
+`localStorage`, never the originating tab. Duplicate protection lives in the
+database as a partial unique index, because a refresh, a second tab and a
+reopened browser all pass a client-side check.
+
+Reconnecting to a running job must never issue a second research POST.
+
 ## Regression requirement
 
 Treat premature termination from a recoverable backend failure as a **regression
