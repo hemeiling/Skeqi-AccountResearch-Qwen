@@ -1197,7 +1197,13 @@ def apply_evidence_caps(site_evidence, web_evidence):
             continue
         if len(retained) >= MAX_EVIDENCE_ITEMS:
             dropped.append(dict(item, drop_reason="evidence cap")); continue
-        if item["tier"] >= 6:
+        # Measured 2026-09-04: this budget was discarding VERIFIED third-party
+        # sources - for Manz AG, four financial pages that each added a new host,
+        # a new category and new topics - because Chinese financial hosts are
+        # tier 6. The exemption is deliberately narrow: third-party AND proven by
+        # page content. No domain or category is promoted to a higher tier.
+        if item["tier"] >= 6 and not (item.get("content_verified")
+                                      and not item.get("official")):
             if low_used >= low_budget:
                 dropped.append(dict(item, drop_reason="low-tier budget")); continue
             low_used += 1
@@ -1295,21 +1301,32 @@ def build_evidence(ranked, name, name_cn, domain, official_url, progress=None,
     for src, (text, method) in zip(slate, pages):
         if len(evidence) >= MAX_EVIDENCE_ITEMS:
             break
-        if src["tier"] >= 6 and low_kept >= MAX_LOW_TIER_ITEMS:
-            continue
         if len(text) < 120:
             continue
+        # Identity is decided BEFORE the low-tier budget, because whether a page
+        # proved it is about this company is exactly what the budget should key on.
+        content_verified = False
         if not src["official"]:
             ok, _reason = identity_ok(text[:4000], name, name_cn, domain, src["url"])
             if not ok:
                 continue                      # post-fetch disambiguation on body text
-        if src["tier"] >= 6:
+            content_verified = True
+        # The budget exists to keep UNVERIFIED portal chatter out. A low-tier page
+        # whose own body text proves it is about this company is evidence, not
+        # noise, and is not discarded for its tier alone.
+        if src["tier"] >= 6 and not content_verified:
+            if low_kept >= MAX_LOW_TIER_ITEMS:
+                continue
             low_kept += 1
         evidence.append({
             "id": len(evidence) + 1, "title": src["title"], "url": src["url"],
             "domain": urllib.parse.urlparse(src["url"]).netloc,
             "tier": src["tier"], "source_type": src["source_type"],
             "official": src["official"], "retrieval_method": method,
+            # Set only where the page's own body text was matched to the company.
+            # Third-party + content_verified is what exempts an item from the
+            # low-tier budget; nothing else grants the exemption.
+            "content_verified": content_verified,
             # Which research areas this source was found for. Survives into the
             # saved record so coverage gaps become measurable later.
             "topics": src.get("topics") or [],
