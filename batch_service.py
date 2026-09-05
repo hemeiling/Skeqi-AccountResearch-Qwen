@@ -382,16 +382,21 @@ def write_company_output(company, website, package, run):
 
 # --------------------------------------------------------------- pricing
 def pricing(cfg):
-    """Optional. Only reports cost when prices are actually configured."""
-    try:
-        pin = float(cfg.get("AI_PRICE_INPUT_PER_1K", "") or 0)
-        pout = float(cfg.get("AI_PRICE_OUTPUT_PER_1K", "") or 0)
-    except ValueError:
-        return None
-    if pin <= 0 and pout <= 0:
-        return None
-    return {"input_per_1k": pin, "output_per_1k": pout,
-            "currency": cfg.get("AI_PRICE_CURRENCY", "CNY")}
+    """RETIRED. Always returns None; the CRM is the single pricing source.
+
+    This was a second, divergent price card living in engine env vars
+    (AI_PRICE_INPUT_PER_1K / AI_PRICE_OUTPUT_PER_1K). The CRM already holds a
+    versioned, per-(provider, model) pricing table with effective dates, and all
+    Account Research cost is now calculated there from the provider's own usage
+    blocks. Two cards can disagree, and the one nobody maintains is the one that
+    will be wrong.
+
+    It is neutered rather than deleted because its three call sites are in an
+    ACTIVE workflow (batch runs and the portfolio PDF) and all of them already
+    handle None by omitting cost. In production AI_PRICE_* was never set, so this
+    has always returned None and no displayed number changes.
+    """
+    return None
 
 
 def estimate_cost(usage, price):

@@ -874,9 +874,25 @@ def search_options(cfg):
 RETRIEVAL_LADDER = ("qwen3.6-flash", "deepseek-v4-flash-0731", "deepseek-v4-pro")
 
 
-def run_search(query, cfg, timeout, model=None):
+def usage_of(data, model):
+    """The provider's OWN usage block for one call. Never an estimate."""
+    u = (data or {}).get("usage") or {}
+    return {"model": model,
+            "input_tokens": u.get("input_tokens") or 0,
+            "output_tokens": u.get("output_tokens") or 0,
+            "total_tokens": u.get("total_tokens")
+            or ((u.get("input_tokens") or 0) + (u.get("output_tokens") or 0))}
+
+
+def run_search(query, cfg, timeout, model=None, usage_sink=None):
     """Bailian exposes web search only through a model call, so the model is
-    used purely as a retrieval vehicle. Its prose is discarded."""
+    used purely as a retrieval vehicle. Its prose is discarded.
+
+    Its TOKENS are not. Retrieval is a real model call and was costing real
+    money invisibly: the usage block was read for synthesis and thrown away
+    here, so a 25-query run reported only its synthesis tokens. `usage_sink`
+    collects the provider's own numbers per call. Accounting only - the query,
+    the model, the fallback behaviour and the results are untouched."""
     model = model or cfg.get("AI_MODEL_FAST", "deepseek-v4-flash-0731")
     path, is_multi = endpoint_for(model, cfg)
     url = cfg["DASHSCOPE_BASE_URL"].rstrip("/") + path
@@ -904,6 +920,8 @@ def run_search(query, cfg, timeout, model=None):
         content = [{"text": query}] if is_multi else query
         status, data = _post()
     record_access(model, status, data)
+    if usage_sink is not None:
+        usage_sink.append(dict(usage_of(data, model), kind="retrieval", status=status))
     results = ((data.get("output") or {}).get("search_info") or {}).get("search_results") or []
     return status, [r for r in results if r.get("url")]
 
@@ -2262,9 +2280,18 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
     # re-called, but they are still reported so the switch is explainable.
     tried = [MODEL_LABELS.get(m, m) for m, rec in access_report().items() if not rec["ok"]]
     last = None
+    # Every attempt that actually executed, priced later at ITS OWN model's rate.
+    # A denied first choice still burned tokens if it answered at all.
+    attempts = []
     for candidate in model_candidates(cfg, preferred=model):
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
                          apollo_people=apollo_people, on_section=on_section)
+        attempts.append({"model": candidate, "kind": "synthesis",
+                         "status": run.get("status"),
+                         "input_tokens": run.get("input_tokens") or 0,
+                         "output_tokens": run.get("output_tokens") or 0,
+                         "total_tokens": run.get("total_tokens") or 0})
+        run["ai_attempts"] = list(attempts)
         run["requested_model"] = model
         run["model_used"] = candidate
         run["fallback_used"] = candidate != model
@@ -2481,6 +2508,9 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # structured limitation and the session continues. Nothing in retrieval is
     # allowed to end the run: the only fatal outcomes live at synthesis.
     limitations = []
+    # Every model call this run makes, with the provider's own usage block.
+    # Retrieval is a real model call; it was previously uncounted entirely.
+    ai_usage = []
 
     def limitation(stage, message, status="degraded"):
         limitations.append({"stage": stage, "status": status, "message": message})
@@ -2585,7 +2615,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
         def _search(item, _model=model):
             qlabel, query = item
-            status, results = run_search(query, cfg, timeout, model=_model)
+            status, results = run_search(query, cfg, timeout, model=_model,
+                                         usage_sink=ai_usage)
             # Which research area surfaced this result. Carried through candidate
             # selection, verification and evidence so retrieval can eventually
             # reason about GAPS rather than counts. No prompt change: the label
@@ -2671,7 +2702,9 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         if short:
             progress("search", "Widening with company-name-only queries")
             for _st, more in parallel_map(
-                    lambda q: run_search(q, cfg, timeout, model=(model_candidates(cfg) or [None])[0]),
+                    lambda q: run_search(q, cfg, timeout,
+                                         model=(model_candidates(cfg) or [None])[0],
+                                         usage_sink=ai_usage),
                     short, SEARCH_CONCURRENCY):
                 for r in more:
                     r.setdefault("topic", "company overview")
@@ -2959,6 +2992,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,
         "limitations": limitations,
+        # Accounting input for the CRM. Actual provider numbers, never estimates.
+        "ai_usage": ai_usage,
         "provenance": prov_counts,
         "ecosystem": registry.report(),
         "zero_grounding": zero_grounding,

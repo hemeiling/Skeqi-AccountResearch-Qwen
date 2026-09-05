@@ -373,6 +373,11 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 "model": m.get("model"),
                 "record": m["result"],
                 "outcome": "completed_with_limitations" if limited else "completed",
+                # One accounting payload for the whole run: every retrieval call
+                # plus every synthesis attempt that actually executed. Provider
+                # numbers only. The CRM prices it; the engine does not.
+                "ai_usage": (package.get("ai_usage") or [])
+                            + list((m.get("result") or {}).get("ai_attempts") or []),
                 "limitations": quality.get("limitations") or [],
                 "zero_grounding": bool(quality.get("zero_grounding")),
                 "warnings": [st["message"] for st in (snap.get("stages") or [])
