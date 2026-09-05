@@ -1092,7 +1092,46 @@ _ENTITY_EN = re.compile(
     r"(?:supplier|suppliers|contract manufacturer|manufacturing partner|assembled by|"
     r"manufactured by|produced by|joint venture with|partners? with)\s+"
     r"([A-Z][A-Za-z0-9&.\-]{1,20}(?:\s+[A-Z][A-Za-z0-9&.\-]{1,20}){0,2})")
-_ENTITY_ZH = re.compile(r"([\u4e00-\u9fff]{2,10})(?:\s*(?:代工|是其供应商|为其供应|供应商|组装))")
+# A relationship cue marks a RELATIONSHIP, not the boundaries of an ORGANISATION.
+# The first version took whatever characters sat before 供应商, which on Apple's
+# Chinese coverage promoted 也得从同一批, 他跟 and 成本结构从外部 - sentence fragments,
+# each with a real proof URL, because the gate was working and the extractor was not.
+#
+# Three rules, precision first. Promotion can authorise entity-scoped retrieval, and
+# the outcomes are asymmetric: a false entity spends searches on nonsense and can
+# contaminate evidence, while a missed entity only leaves baseline retrieval alone.
+#
+#   1. The candidate must START at a real delimiter - punctuation, whitespace, Latin
+#      or a digit - and run to the cue. No shorter substring is salvaged out of a
+#      longer phrase, and mid-sentence text is not mined at all: a greedy match there
+#      produced 果的主要代工厂富士康科技集团, where the name is present but nothing says
+#      where it begins.
+#   2. It must carry an organisation suffix. This is what separates 立讯精密 from 多家.
+#   3. It must contain no grammatical particle. 和, 与, 中, 国, 华 are deliberately NOT
+#      particles - 和记黄埔 and 中创新航 are real companies. An earlier draft listed 比
+#      and silently rejected 比亚迪.
+#
+# KNOWN LIMITATION: a bare Chinese brand carrying no organisation suffix - 富士康,
+# 和硕, 比亚迪, 宁德时代 - is NOT extracted. Latin-script partners are unaffected,
+# since they come from _ENTITY_EN. Measured on Apple's 16 sources this rule yields
+# zero candidates, which is the correct answer for a corpus that uses 供应商
+# generically and never names a Chinese company beside it.
+_ZH_CUE = r"(?:代工厂|代工|是其供应商|为其供应|供应商|组装厂|组装|制造合作伙伴)"
+_ZH_DELIM = r"[\s，。、；：？！（）()【】\[\]「」『』《》〈〉\"'“”‘’/|·—\-0-9A-Za-z]"
+_ZH_ORG_SUFFIX = ("公司", "集团", "科技", "电子", "股份", "有限", "工业", "制造", "实业",
+                  "精密", "智能", "装备", "光电", "材料", "半导体", "机械", "自动化",
+                  "重工", "控股", "技术", "设备", "工厂")
+_ZH_PARTICLES = set("的了也就都很更但而从跟把被没不要会于及或这那其她它是有令使让呢吗着过们来又还再已将曾才刚")
+_ENTITY_ZH = re.compile(
+    r"(?:^|" + _ZH_DELIM + r")([一-鿿]{2,12}(?:" + "|".join(_ZH_ORG_SUFFIX) + r"))"
+    r"(?=" + _ZH_CUE + r")")
+
+
+def _zh_entity_ok(cand):
+    """An organisation name, not a fragment that happened to precede a cue."""
+    return (cand and 2 <= len(cand) <= 12
+            and not any(ch in _ZH_PARTICLES for ch in cand)
+            and any(cand.endswith(sfx) for sfx in _ZH_ORG_SUFFIX))
 
 # Words that look like a company after a cue but are not one.
 _ENTITY_STOP = {
@@ -1142,6 +1181,8 @@ class EcosystemRegistry:
             if e:
                 found.append(e)
         for m in _ENTITY_ZH.finditer(text or ""):
+            if not _zh_entity_ok(m.group(1)):
+                continue
             e = self._plausible(m.group(1))
             if e:
                 found.append(e)

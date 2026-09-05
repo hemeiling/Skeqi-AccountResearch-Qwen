@@ -135,6 +135,51 @@ check("synthesis is told a market source shows no relationship",
 check("synthesis is told a target source is about the account",
       "EVIDENCE ABOUT: the account itself." in rendered)
 
+print("\n[G2] Chinese organisation extraction - precision over recall\n")
+
+# The three fragments the first extractor promoted from Apple's Chinese coverage,
+# with the sentences that produced them. Each had a real proof URL: the promotion
+# gate was working and the extractor was not.
+APPLE_FALSE = [
+    ("也得从同一批", "苹果的A系列和M系列再先进，也得从同一批供应商手里抢产能。"),
+    ("成本结构从外部", "把整个Mac产品线的性能、功耗、成本结构从外部供应商手里拿回来的手术。"),
+    ("他跟", "他跟供应商死磕背面螺丝凹槽数量，35轮打样。"),
+]
+_zh = rs.EcosystemRegistry("Apple")
+for frag, sentence in APPLE_FALSE:
+    got = _zh.extract(sentence)
+    check("rejects the fragment %s" % frag, frag not in got, str(got))
+check("those sentences yield no entity at all",
+      all(not rs.EcosystemRegistry("Apple").extract(s) for _f, s in APPLE_FALSE))
+
+_ok = rs.EcosystemRegistry("Apple")
+for text, want in [
+        ("供应商包括：富士康科技集团代工整机。", "富士康科技集团"),
+        ("产品由，立讯精密供应商提供组装。", "立讯精密"),
+        ("组件来自 京东方科技集团供应商 。", "京东方科技集团"),
+]:
+    check("keeps %s" % want, want in _ok.extract(text), str(_ok.extract(text)))
+
+# 比 was in an early particle list and silently killed 比亚迪. 和/与/中 must stay legal.
+check("比 is not treated as a particle", "比" not in rs._ZH_PARTICLES)
+check("和 is not treated as a particle", "和" not in rs._ZH_PARTICLES)
+check("中 is not treated as a particle", "中" not in rs._ZH_PARTICLES)
+check("比亚迪科技 survives the particle rule", rs._zh_entity_ok("比亚迪科技"))
+check("和记黄埔集团 survives the particle rule", rs._zh_entity_ok("和记黄埔集团"))
+check("中创新航科技 survives the particle rule", rs._zh_entity_ok("中创新航科技"))
+
+# Deliberate false negatives, documented rather than silent.
+check("a bare brand with no org suffix is a KNOWN miss", not rs._zh_entity_ok("比亚迪"))
+check("mid-sentence text is not mined for names",
+      rs.EcosystemRegistry("Apple").extract("苹果的主要代工厂富士康科技集团代工iPhone。") == [],
+      "mid-sentence must stay refused")
+check("a fragment with an org-like tail is still refused",
+      not rs._zh_entity_ok("在回收") and not rs._zh_entity_ok("多家"))
+
+check("Latin extraction is untouched",
+      "Kestrel Precision" in rs.EcosystemRegistry("Northwind Devices").extract(
+          "Northwind Devices said its final assembly supplier Kestrel Precision will expand."))
+
 print("\n[G] Reporting and safety\n")
 
 rep = reg.report()
