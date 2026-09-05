@@ -1593,15 +1593,77 @@ A 2x2: Strengths / 优势 and Weaknesses / 劣势 on top, Opportunities / 机会
 Concise, evidence-based points. Do NOT invent weaknesses to fill the table — fewer entries is correct.
 
 ## Competitor Analysis / 竞争对手分析
-Only the genuinely relevant competitors. Compare product range, technology, industry focus,
-geography, manufacturing capacity and innovation. Use a table.
+Who competes with SKEQI for THIS account's automation, equipment, inspection, logistics and
+manufacturing-system opportunities. NOT a generic SKEQI competitor list, NOT the target's own
+product-market rivals, and NOT battery equipment unless battery manufacturing is genuinely
+relevant here.
+1. HOW THIS ACCOUNT OPERATES. What it makes; which processes matter strategically; whether
+manufacturing is internal, outsourced, contract-manufactured, JV or hybrid; who owns the relevant
+plants; who specifies equipment, who buys it, who runs it; which contract manufacturers, tier
+suppliers, JVs or production partners matter; which factories, expansions or product introductions
+create demand. Do NOT assume the target owns the production environment. Where manufacturing is
+outsourced, analyse the supplier network instead.
+2. RELEVANT DOMAINS. Name only the capability domains this account's model supports - e.g.
+precision or electronics assembly, cell/module/PACK, automotive components, laser processing,
+machine vision, metrology, X-ray/NDT, end-of-line test, robotics, material handling, intelligent
+logistics, ASRS, PLC/motion, traceability, MES/digital factory, analytics, quality automation,
+turnkey integration, recycling. Omit the rest.
+3. WHO SKEQI WOULD ACTUALLY MEET. Per domain: incumbent providers; suppliers at target-owned
+plants; suppliers at the contract manufacturers and component suppliers producing for the target;
+system integrators; machine builders; specialist vendors; the target's own engineering; the
+partners' internal capability.
+4. CLASSIFY each one, and never upgrade a weaker class into a customer relationship:
+**Verified incumbent** evidence ties it to the target or a target program/facility;
+**Ecosystem incumbent** tied to a manufacturer or supplier producing for the target;
+**Likely account competitor** could credibly compete, incumbency unconfirmed;
+**Market alternative** technically relevant, no demonstrated account relationship;
+**Internal / insourced** the target or its partner can build it themselves.
+5. TABLE the significant ones: Company | Classification | Capability | Product, factory, program
+or partner | Evidence [n] | Why it competes with SKEQI | Incumbency | Strength | Gap | SKEQI
+differentiation | Threat H/M/L | Confidence Verified/Likely/Possible.
+6. THE BUYING BATTLEFIELD. Say where the decision actually happens: target procurement, target
+manufacturing-engineering specification, contract-manufacturer procurement, component-supplier
+procurement, joint development, integrator selection, expansion bidding, or retrofit projects.
+7. SKEQI STRATEGY. Top threats; where SKEQI can realistically enter; where incumbency is hard to
+displace; where to complement rather than replace; differentiation; white space; which partner or
+entity SKEQI may have to sell through; 3-5 specific discovery questions.
+If direct evidence is thin, widen to the manufacturing ecosystem, production partners, comparable
+facilities and credible alternatives rather than concluding that no competitors were identified.
+Keep confidence honest; never invent a relationship.
 
 ## Existing Automation Providers / 现有自动化供应商
-Public evidence of equipment/automation suppliers and partners: Siemens, ABB, Schneider Electric,
-Mitsubishi Electric, Rockwell Automation, Beckhoff, Bosch Rexroth, FANUC, KUKA, Keyence, Cognex,
-Trumpf, IPG, Han's Laser 大族激光, Lead Intelligent 先导智能, Hymson 海目星 and other battery-equipment
-vendors. NEVER assume a relationship exists. Label each: **Confirmed** / **Likely / partially
-supported** / **Not enough evidence**, with the source URL. Note where SKEQI could compete or complement.
+Reconstruct the automation, equipment and manufacturing-technology ecosystem behind THIS account's
+products. The question is what is actually used to make them - not only what stands inside a
+factory the target owns. Work from evidence, not from a vendor list.
+1. MANUFACTURING MODEL. Internal, outsourced, contract-manufactured, supplier-driven, JV or
+hybrid. Name the participants that matter: target plants, contract manufacturers, major component
+suppliers, manufacturing partners, JVs, regional production ecosystems. Where evidence allows, say
+who specifies equipment, who selects suppliers, who purchases and who operates.
+2. RELEVANT PROCESSES, derived from this account rather than a checklist - electronics or precision
+assembly, machining, dispensing, laser processing, welding, cell or module/PACK, stamping, plastics,
+vision, metrology, X-ray/NDT, functional test, robotics, material handling, intelligent logistics,
+warehousing, PLC/motion, MES, traceability, quality systems, digital factory, analytics, or whatever
+this account actually requires.
+3. THE PROVIDER ECOSYSTEM. Equipment suppliers, automation providers, machine builders, robotics,
+controls, inspection, logistics, manufacturing software, integrators, and internal capability on
+both the target and partner side. Search well beyond the target's own website: supplier
+announcements and case studies, contract manufacturers, factory and project announcements, tenders
+and awards, investor disclosures, government filings, technical papers, job postings, engineering
+presentations, expansion news and supplier-responsibility disclosures.
+4. WHERE IT SITS: **Target-direct** / **Target-owned factory** / **Partner or supplier ecosystem** /
+**Internal target capability** / **Partner internal capability** / **Unknown**.
+5. CONFIDENCE: **Verified** / **Likely** / **Possible**. Never present Likely or Possible as verified.
+6. TABLE: Process or capability | Provider or internal capability | Where it sits | Factory, partner
+or project | Evidence [n] | Confidence | Incumbency | Who specifies the decision | Switching
+difficulty | SKEQI relationship COMPETE/REPLACE/COMPLEMENT/INTEGRATE | SKEQI opportunity.
+7. OPPORTUNITY. New capacity, new products, new plants, supplier or CM expansion, localisation,
+automation upgrades, quality and inspection modernisation, laser processing, logistics,
+digital-factory integration, bottlenecks, legacy replacement, fragmented supply, and areas with no
+established incumbent. Missing public supplier information is NOT white space - say when the gap is
+in the evidence rather than in the account.
+8. SALES IMPLICATION. Current manufacturing ecosystem; strongest incumbents; decision path naming
+who specifies, buys and operates; best SKEQI entry points, ranked; information gaps; 3-5 specific
+discovery questions.
 
 ## Key Decision Makers / 关键决策人
 Leaders relevant to an equipment engagement: CEO/President, COO, CTO, CIO, manufacturing,
