@@ -2,8 +2,8 @@
 
 > Last updated: 2026-09-04
 > Updated by: Claude
-> Current phase: Retrieval quality — Tier B verification committed (`f560b63`), NOT pushed
-> Latest change: identity matching, Tier B verification, adaptive fetching, Policy A sufficiency (§0e)
+> Current phase: Best-effort continuation adopted (§13); pipeline audit pending your review
+> Latest change: retention exemption (`7f39b83`) and Tesla blocked-site fix (`0c99f98`)
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -433,13 +433,77 @@ own stopping rule, burns all 30 fetches, and ends with less evidence than it
 gathered. Verkor and ACRO discarded **no** third-party sources; ACRO is thinly
 covered at source, which is a different problem.
 
-**Recommended next change:** the low-tier budget should not apply to third-party
-sources that passed content verification, or verified financial/news sources
-should classify above tier 6. The tier system predates verification, when
-"low tier" meant trade portals and marketplaces.
+**RESOLVED 2026-09-04 in `7f39b83`.** A third-party source that passed
+page-content identity verification is no longer discarded for its tier alone.
+The exemption requires BOTH third-party AND `content_verified`; no domain, host
+or category is promoted. `build_evidence` now decides identity before applying
+the budget and records `content_verified` so the production rule can see it.
 
-Status: **NOT STARTED.** Caps were deliberately left unchanged so the retrieval
-measurements above are not confounded.
+Measured, retrieval only:
+
+| Company | Fetches | Third-party | Hosts | Cats | Sufficient | Discarded |
+|---|---|---|---|---|---|---|
+| Manz before | 30 | 3 | 3 | 2 | no | 4 |
+| **Manz after** | **10** | **10** | **7** | **3** | **yes** | **0** |
+| Verkor before | 10 | 4 | 3 | 2 | yes | 0 |
+| Verkor after | 30 | 4 | 4 | 2 | yes | 0 |
+| ACRO before | 30 | 2 | 1 | 1 | no | 0 |
+| ACRO after | 30 | 3 | 2 | 1 | no | 0 |
+
+Manz satisfies all three predicates on the first batch and uses a third of the
+budget. ACRO was the regression that mattered — it must not be pushed over the
+line by readmitted weak sources — and it correctly still fails the rule.
+
+Verkor needed three batches where it previously needed one, at the same final
+counts. Retention can only ADD items and tier ordering prevents displacement, so
+this is search-backend variance: at 10 fetches this run had 3 third-party
+candidates where the earlier run had 4. Confirmed from the per-batch checkpoints.
+
+---
+
+## 0f. Tesla — blocked official site misreported (2026-09-04)
+
+Committed as `0c99f98`. Tesla returned "Broader web research produced
+insufficient reliable evidence" after 25 queries. Two independent bugs.
+
+**1. A blocked official site was reported as missing evidence.**
+`validate_website` correctly accepts a host that blocks automation when the
+domain distinctively encodes the company name — tesla.com IS Tesla's site. It
+returns `reason="site_blocked"` with empty text, and `resolve_website` then
+labelled the run `provided` and dropped the distinction. The official crawl
+contributed nothing and the run ended on the generic `insufficient` branch.
+`FAILURE_REASONS` already carried an accurate `site_blocked` message that
+nothing ever raised.
+
+Now: `resolve_website` reports `blocked`, `build_shared_evidence` derives a
+`site_blocked` state, warns through the existing WARN channel, and puts the flag
+on both the package and `quality`. Blocked is not invalid and not unresearchable.
+
+**2. Financial retrieval ran after the empty-evidence guard.**
+A public company whose website blocks crawlers was failed while its financial
+evidence was one call away, uncollected. Yahoo Finance now runs before the guard.
+
+Verified on non-model paths only — no search, no synthesis, nothing billable:
+
+| Check | Result |
+|---|---|
+| Domain validates | ok, `reason=site_blocked`, 0 chars |
+| Blocked state recognised | `status=provided`, `blocked=True` |
+| TSLA listing resolves | public, TSLA, "Tesla, Inc.", SEC EDGAR |
+| Yahoo evidence collected | `finance.yahoo.com/quote/TSLA/`, 2000 chars |
+| Guard fires? | 0 items before Yahoo, 1 after → no raise |
+
+Tesla now proceeds to synthesis. `quality["blocking"]` needs both unverified
+identity and no official source; identity still holds on the domain match.
+
+**Diagnostic note for future sessions:** the engine assigns its own `job_id`,
+unrelated to the CRM's. A completed run's retrieval funnel lives only in the
+serving process's memory, and `evidence_cache` is written on success only. If a
+run must be diagnosed after the fact, capture the funnel while the job is live.
+
+**`/healthz` now returns a commit.** It answered `{"ok": true}` with no way to
+tell which build was serving. It reports `RENDER_GIT_COMMIT` when present, else
+git, cached and never raising. `verify_deployment.sh` prints it.
 
 ---
 
