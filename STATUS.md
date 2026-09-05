@@ -1,9 +1,9 @@
 # Account Research — Project Status
 
-> Last updated: 2026-09-04
+> Last updated: 2026-09-05
 > Updated by: Claude
-> Current phase: Best-effort continuation IMPLEMENTED and covered by tests (§0g)
-> Latest change: continuation + zero-grounding (`0e62d05`), Research Sessions (CRM `5bb0494`)
+> Current phase: Production parity on both services; truncation defect CLOSED (§0i)
+> Latest change: display-filter truncation fix (`5dc764f`), live output (`9955236`, CRM `2027d9c`)
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -590,6 +590,87 @@ unique index in Neon refuses a duplicate behind it.
 Verified in headless Chromium against live Neon, 12 checks: the list renders,
 selecting opens the detailed panel, sessions survive a full reload, and neither
 selecting nor reloading issues a research POST.
+
+---
+
+## 0i. Display-filter sentence truncation — CLOSED (2026-09-05)
+
+Fixed in `5dc764f`, deployed and validated in production.
+
+### What was wrong
+
+Reported as a bilingual bug: Existing Automation Providers rendered the Chinese as
+`设备/自动化供应商公开证据（西门子、ABB、先` — cut mid-word — and the English lost
+everything after `FANUC`.
+
+Neither the model nor the database was at fault. The raw model output is complete
+and correctly parallel, and the stored `research_result` is intact. The damage was
+done on the way out, by the last line of `_strip_unsupported_tag`:
+
+```python
+r"[;；,，.。]?\s*[^\s。;；,，|]{1,14}[:：]\s*$"
+```
+
+It drops a label left with nothing after it once a "not enough evidence" badge is
+removed, and the 1-14 limit was meant to catch SHORT labels only. But nothing
+anchored its left edge, so instead of failing to match a long label it matched
+that label's **last fourteen characters**. Chinese has no spaces to stop the
+window, so it consumed real words. English slash-lists went the same way.
+
+**28 of the 37 badge-carrying lines** in the Tesla report were cut. The filter
+runs at RENDER time, so this corrupted every markdown view and every PDF while
+storage stayed clean — which is why the fix repaired every existing report with
+no regeneration and no migration.
+
+### The rule now
+
+A label is stripped only when it is the **entire remaining content** of the
+bullet, and then the whole bullet is dropped rather than left as an orphan `-`.
+Anchoring alone was tried and rejected: it still took `projects:` off
+`Major upcoming projects:`.
+
+| Case | Behaviour |
+|---|---|
+| `…（西门子、ABB、先导、海目星、库卡、发那科等）：` | preserved |
+| `Divisions/products/services:` | preserved |
+| `Major upcoming projects:` | preserved |
+| `Expansion: Historical growth [2].` | preserved |
+| `Expansion:` alone | dropped |
+
+### Verified in production, no regeneration
+
+Engine `5dc764f7398c`, CRM `2027d9c`. Rendering the stored Tesla report through
+the production CRM render route:
+
+- supplier list complete in English, Chinese and bilingual;
+- no bullet ends on a dangling separator; no orphan bullet markers;
+- PDFs valid in all three languages.
+
+Of the 28 damaged lines: **19 return byte-for-byte**, **9 are dropped** as bare
+labels, **0 remain cut mid-content**.
+
+`test_bilingual_display.py` covers it: Chinese no-space sentences, English slash-
+and space-separated labels, punctuation before colons, dangling labels, badge
+removal inside valid sentences, all three bullet markers, and the PDF path. It
+fails 19 of 31 against the old rule. The real-report check is opt-in through
+`AR_TESLA_FIXTURE` so no customer report is committed.
+
+### NOT part of this defect — still open
+
+1. **Language purity.** The English view still carries ~187 CJK characters in its
+   body, from two causes: the model occasionally writing Chinese prose inside the
+   `**English:**` block, and the app-generated SKEQI capability table whose cells
+   are bilingual and never language-selected.
+2. **Placeholder asymmetry.** `is_placeholder` treats the two halves of one bullet
+   differently — it keeps `Location/timing/capacity/investment relevance to SKEQI:`
+   in English but drops the Chinese `地点/时间表/产能/投资价值及对思客琦的意义：` from
+   the same source pair. Four fragments are absent from the render for this
+   reason; they were absent BEFORE the fix too, so this is not a regression.
+3. **Report architecture.** The saved report is one markdown document with
+   `**English:**` / `**中文：**` blocks, language-selected at render time. That is
+   the "derive one language from the other" pattern the bilingual invariant rules
+   out. Live sections already store `content_en` / `content_zh` separately; the
+   saved report does not.
 
 ---
 
@@ -1512,50 +1593,42 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Best-effort continuation, zero-grounding mode and Research Sessions.**
+**Production parity on both services, and the truncation defect closed.**
 
 | Commit | Repo | What |
 |---|---|---|
-| `7f39b83` | engine | Verified third-party evidence survives the low-tier budget |
-| `0c99f98` | engine | Blocked official site is a state; financials before the guard |
-| `25a32f4` | engine | Continuation principle into `CLAUDE.md` |
-| `e135a89` | engine | STATUS.md: retention + Tesla results |
-| `0e62d05` | engine | Continuation implemented; zero-grounding; terminal states; tests |
-| `5bb0494` | CRM | Research Sessions on the durable job table |
+| `9955236` | engine | Live incremental research output, durable against the job id |
+| `5dc764f` | engine | Display-filter truncation fix (§0i) |
+| `2027d9c` | CRM | Live Research panel, read from Neon |
 
-Details in §0e (retention), §0f (Tesla), §0g (continuation), §0h (sessions).
+Deployed and verified: engine `5dc764f7398c`, CRM `2027d9c`.
 
-**Verified.** 28 engine regression checks with no network and no model call, and
-12 headless-Chromium checks against live Neon. No paid research run was used for
-any of this work.
+**Suites:** bilingual display 31/31, continuation 28/28, live output 29/29,
+CRM section API 15/15, headless browser 17/17. No model call was spent on any of
+this, and Tesla was never regenerated.
 
 ---
 
 ## 15. Current Work In Progress
 
-**Render redeploy** — `0e62d05` is pushed. The service at
-`https://skeqi-accountresearch-qwen.onrender.com` still answers `{"ok": true}`
-with no `version`, so it is running a build older than `0c99f98`. Auto-deploy may
-be off, or the build may still be running. **This is the open item.**
+Nothing in flight. Both services are deployed and match their branches.
 
-**CRM branch** — `account-research-qwen`, not merged to `main`.
-
-**Local engines** — the two processes on 5057 and 5062 started 2026-09-03 and
-run PRE-continuation code. They must be restarted to pick up `0e62d05`. They are
-the user's processes; do not restart them without asking.
+**Next up, agreed:** Tavily / provider redundancy for retrieval. Deliberately held
+until the production baseline was clean, which it now is.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. **Confirm the Render deploy.** `/healthz` must report `version: 0e62d05`. If it
-   stays `{"ok": true}`, check that auto-deploy is enabled for `main`.
-2. Restart the local engines so the CRM exercises the new pipeline.
-3. Run ONE live company end to end and confirm it reaches a report rather than a
-   terminal state. Tesla is the natural choice: it now has financial evidence and
-   a blocked-site warning.
-4. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render.
-5. PowerCo has still never run.
+1. **Tavily / provider redundancy** — the agreed next retrieval improvement.
+2. **Language purity** (§0i, item 1): stop Chinese prose appearing in the English
+   view. Two causes, one prompt-side and one in the generated capability table.
+3. **Placeholder asymmetry** (§0i, item 2): `is_placeholder` treats the two halves
+   of a bullet differently.
+4. **Bilingual invariant** (§0i, item 3): the saved report should carry
+   independent `content_en` / `content_zh` per section rather than being filtered
+   out of one document at render time.
+5. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render; PowerCo has never run.
 
 ---
 
@@ -1609,32 +1682,32 @@ the user's processes; do not restart them without asking.
 ## 18. Session Handoff
 
 **Last successful operation:**
-Research Sessions verified in headless Chromium against live Neon (12 checks),
-and the engine continuation suite at 28 checks. Engine pushed through `0e62d05`.
+Production validation of the stored Tesla report through the CRM render route.
+Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-All requested work is implemented, tested and committed. The single open item is
-**the Render deploy**: the service still answers `{"ok": true}` with no `version`,
-so it has not picked up `0c99f98` or later.
+The display-filter truncation defect is CLOSED (§0i). Both services are deployed
+and match their branches. Nothing is in flight.
 
 **The one thing to know:**
-The pipeline is now best-effort. Nothing in retrieval can end a session; the only
-fatal execution outcome is `synthesis_failed`. If you are tempted to add a guard,
-read the top of `CLAUDE.md` first, then `test_continuation.py`, which will fail if
-fail-fast returns.
+Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
+needed manual deploys; `5dc764f` went automatically. Always confirm with
+`/healthz`, which reports the serving commit, before validating anything.
 
 **Recommended next command/action:**
-`curl -s https://skeqi-accountresearch-qwen.onrender.com/healthz` and confirm the
-version. Then restart the local engines and run one live company.
+Start Tavily / provider redundancy, or take one of the three items §0i leaves
+open. Read the top of `CLAUDE.md` first: best-effort continuation, the durability
+invariant and the incremental-output requirement all constrain that work.
 
-**Uncommitted changes:** `STATUS.md` only.
+**Uncommitted changes:** none.
 
 **Application currently runnable:** Yes. `PORT=5062 .venv/bin/python app.py`.
-Regression suite: `.venv/bin/python test_continuation.py`.
+Suites: `test_continuation.py`, `test_live_output.py`, `test_bilingual_display.py`
+(the last takes `AR_TESLA_FIXTURE` for the real-report check).
 
 **Known blockers / limitations:**
-1. Render has not redeployed; the deployed engine predates the Tesla fix.
-2. Local engines run pre-continuation code until restarted.
-3. ACRO is thinly covered at source; that is the index, not the filter.
-4. Live research costs tokens. Do not run it to test UI.
-5. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
+1. Engine auto-deploy on Render is unreliable; verify `/healthz` every time.
+2. Language purity, placeholder asymmetry and the bilingual invariant are open.
+3. Live section publishing has not been exercised in production; it needs a real
+   run, which is billable. The code is covered locally by 29 checks.
+4. `CRM_CALLBACK_URL` and `APOLLO_API_KEY` still unset on Render.
