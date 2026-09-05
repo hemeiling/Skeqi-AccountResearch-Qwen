@@ -1,3 +1,103 @@
+> **Read this file before making any Account Research code change.**
+
+---
+
+# Account Research Core Philosophy — BEST-EFFORT CONTINUATION
+
+**Non-negotiable. Applies to all future Account Research development, debugging,
+refactoring and feature work.**
+
+The Account Research pipeline must always continue whenever technically possible.
+The system is **best-effort, not fail-fast**.
+
+The governing invariant:
+
+> A backend-stage failure **degrades the report**.
+> It does **NOT** terminate the research session.
+>
+> **partial evidence > no report**
+
+Every independent research capability must be attempted even if an earlier one fails.
+
+```
+official website blocked   → warning    → continue
+web source unavailable     → warning    → continue
+financial lookup fails     → warning    → continue
+CRM contacts unavailable   → warning    → continue
+Apollo unavailable         → warning    → continue
+evidence below sufficiency → limitation → continue
+                                          ↓
+                                       synthesis
+                                          ↓
+                            save the best report possible
+```
+
+## Evidence sufficiency is a dial, not a gate
+
+Sufficiency determines:
+
+- whether retrieval should continue
+- confidence
+- completeness
+- report warnings
+
+It must **never by itself** determine whether a report is generated.
+
+Reaching an adaptive retrieval ceiling with insufficient evidence means:
+
+```
+stop retrieving → record evidence limitation → continue to synthesis
+```
+
+It does **NOT** mean `stop research → "nothing was generated"`.
+
+## Error classification
+
+Every backend error is either **RECOVERABLE** or **FATAL**. **Default to RECOVERABLE.**
+
+A recoverable failure must:
+
+1. record a structured warning;
+2. mark the affected stage degraded/unavailable;
+3. preserve whatever evidence already exists;
+4. continue the remaining independent stages.
+
+FATAL is reserved for cases where continuation is technically impossible: an
+invalid request with no identifiable company, or complete failure of the final
+synthesis service after retries and fallbacks are exhausted.
+
+## Development rule
+
+Before introducing any new `raise`, exception, early return, abort, quality gate
+or validation gate in the Account Research execution path, ask:
+
+> "Does this truly make continuation technically impossible?"
+
+If the answer is no, **it must not terminate the session.**
+
+## UX invariant
+
+Users should normally receive a report even when parts of research fail. Show
+degradation explicitly:
+
+```
+✓ Completed
+⚠ Completed with limitation
+✕ Source unavailable — continued
+```
+
+Do not require the user to click **Research Anyway** for ordinary evidence
+limitations. Researching anyway is the default behaviour.
+
+## Regression requirement
+
+Treat premature termination from a recoverable backend failure as a **regression
+bug**. Any future change to retrieval, identity validation, source quality,
+evidence retention, financial research, contact enrichment, model integrations or
+other backend stages must preserve this invariant.
+
+---
+
 # Engineering Role & Standard
 
 Act as an exceptionally strong senior full-stack engineer, AI engineer, software architect, and product-minded technical lead.

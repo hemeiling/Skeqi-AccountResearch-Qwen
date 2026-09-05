@@ -1282,6 +1282,32 @@ sentence. One such line remains in the ACRO report. This is correct behaviour.
 
 ## 13. Important Decisions
 
+### Best-effort continuation — the governing invariant (2026-09-04)
+**A backend-stage failure degrades the report. It does NOT terminate the research
+session. partial evidence > no report.** Full statement at the top of `CLAUDE.md`;
+it is non-negotiable and applies to all Account Research work.
+
+Every independent capability is attempted even when an earlier one fails: a blocked
+official site, an unavailable search wave, a failed financial lookup, missing CRM
+contacts, Apollo being down and evidence below sufficiency are all warnings that
+continue, never stops.
+
+Evidence sufficiency decides whether to keep retrieving, and the confidence and
+warnings on the report. It must never by itself decide whether a report is
+generated. Hitting the adaptive ceiling with thin evidence means stop retrieving,
+record the limitation, continue to synthesis.
+
+Errors are classified RECOVERABLE or FATAL, defaulting to RECOVERABLE. FATAL is
+only for an invalid request with no identifiable company, or total failure of the
+synthesis service after fallbacks. Users should not have to click "Research
+Anyway" for ordinary evidence limitations; researching anyway is the default.
+
+Premature termination from a recoverable failure is a regression bug.
+
+Status: **principle recorded; pipeline NOT yet compliant.** The audit of violating
+branches is in §12.
+
+
 ### Standalone app first
 Focus on making the standalone Account Research application useful for immediate company
 research. Do NOT work on SKEQI-EmailDrafter integration unless explicitly requested.
