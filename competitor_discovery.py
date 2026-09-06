@@ -197,7 +197,7 @@ def empty_coverage():
 
 
 def coverage_is_useful(cov):
-    """Breadth of VERIFIED competitors, not volume of results."""
+    """Breadth of VERIFIED competitors, counted as distinct organisations."""
     return (cov["contribution_count"] >= 3 and cov["direct"] >= 1
             and cov["distinct_domains"] >= 2)
 
@@ -254,11 +254,20 @@ def discover(client, profile, verify, progress=None, ceiling=MAX_COMPETITOR_SEAR
                 continue
             kept.extend(out.get("evidence") or [])
             cov["verified"] += out.get("verified", 0)
-            cov["contribution_count"] += out.get("competitors", 0)
-            cov["direct"] += out.get("direct", 0)
-            cov["partial"] += out.get("partial", 0)
-            cov["adjacent"] += out.get("adjacent", 0)
             cov["rejected_same_industry"] += out.get("rejected_same_industry", 0)
+            # Breadth is measured in ORGANISATIONS, never in pages. One rival
+            # found on three domains is one competitor, and it must not satisfy
+            # a threshold meant to mean "we found three different companies".
+            # The verifier owns the deduplicated set, so it reports the absolute
+            # counts and they are set, not accumulated.
+            tally = getattr(verify, "tally", None)
+            if tally is not None:
+                cov.update(tally())
+            else:
+                cov["contribution_count"] += out.get("competitors", 0)
+                cov["direct"] += out.get("direct", 0)
+                cov["partial"] += out.get("partial", 0)
+                cov["adjacent"] += out.get("adjacent", 0)
             if out.get("competitors"):
                 covered.add(key)
         cov["distinct_domains"] = len({e.get("domain") for e in kept if e.get("domain")})

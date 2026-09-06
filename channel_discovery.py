@@ -251,10 +251,17 @@ def discover(client, profile, account, verify, name_cn="", progress=None,
                 continue
             kept.extend(out.get("evidence") or [])
             cov["verified"] += out.get("verified", 0)
-            cov["channel_entities"] += out.get("channel_entities", 0)
-            cov["authorized"] += out.get("authorized", 0)
-            cov["partners"] += out.get("partners", 0)
             cov["rejected_no_representation"] += out.get("rejected_no_representation", 0)
+            # Distinct organisations, not pages: the same distributor found on
+            # two domains is one channel entity, and two sources make it better
+            # evidenced, not twice as broad.
+            tally = getattr(verify, "tally", None)
+            if tally is not None:
+                cov.update(tally())
+            else:
+                cov["channel_entities"] += out.get("channel_entities", 0)
+                cov["authorized"] += out.get("authorized", 0)
+                cov["partners"] += out.get("partners", 0)
             if out.get("channel_entities"):
                 covered.add(key)
         cov["distinct_domains"] = len({e.get("domain") for e in kept if e.get("domain")})

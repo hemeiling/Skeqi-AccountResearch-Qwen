@@ -1819,6 +1819,17 @@ def competitor_verifier(profile, name, name_cn, aliases, sink):
                 "discovered_by": "tavily", "competitor": org,
             })
         return out
+
+    def tally():
+        """Absolute and deduplicated. The sink is the only place an organisation
+        exists exactly once, so breadth is counted there rather than from page
+        hits: one rival found on three domains is one competitor."""
+        return {"contribution_count": len(sink),
+                "direct": sum(1 for c in sink if c["competition_type"] == cdisc.DIRECT),
+                "partial": sum(1 for c in sink if c["competition_type"] == cdisc.PARTIAL),
+                "adjacent": sum(1 for c in sink if c["competition_type"] == cdisc.ADJACENT)}
+
+    verify.tally = tally
     return verify
 
 
@@ -1904,6 +1915,16 @@ def channel_verifier(profile, name, name_cn, aliases, sink):
                 "discovered_by": "tavily", "channel": org,
             })
         return out
+
+    def tally():
+        """Distinct organisations. Two sources for the same distributor make it
+        better evidenced, not twice as broad."""
+        reps = [c for c in sink if c["is_representation"]]
+        return {"channel_entities": len(reps),
+                "authorized": sum(1 for c in reps if c["authorized"]),
+                "partners": len(sink) - len(reps)}
+
+    verify.tally = tally
     return verify
 
 

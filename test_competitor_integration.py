@@ -296,6 +296,39 @@ check("counters are absolute integers",
 check("no monetary field was added",
       not any("cost" in k or "price" in k for k in full["competitor_discovery"]))
 
+print("\n[11b] Breadth is counted in organisations, not pages")
+SAME = ("Rival Nine builds custom automated assembly systems, robotic welding cells "
+        "and machine vision inspection for automotive manufacturers in Milwaukee, WI.")
+OTHER = ("Rival Ten designs custom automated assembly systems and robotic welding "
+         "cells for automotive manufacturers in Milwaukee, WI.")
+for u in ("https://d1.com/a", "https://d2.com/a", "https://d3.com/a"):
+    PAGES[u] = SAME
+PAGES["https://d4.com/a"] = OTHER
+one_org = [hit("https://d1.com/a", "Rival Nine"), hit("https://d2.com/a", "Rival Nine"),
+           hit("https://d3.com/a", "Rival Nine")]
+c11, e11, cov11, cl11 = run(one_org)
+check("one competitor on three domains counts once",
+      cov11["contribution_count"] == 1 and len(c11) == 1,
+      "%d counted, %d retained" % (cov11["contribution_count"], len(c11)))
+check("and does not satisfy the breadth stop",
+      not cd.coverage_is_useful(cov11), str(cov11["contribution_count"]))
+check("the extra sources are kept as stronger evidence",
+      len(c11[0]["source_urls"]) == 3, str(c11[0]["source_urls"]))
+check("the class counts are deduplicated too",
+      cov11["direct"] + cov11["partial"] + cov11["adjacent"] == 1,
+      "%d/%d/%d" % (cov11["direct"], cov11["partial"], cov11["adjacent"]))
+two_org = [hit("https://d1.com/a", "Rival Nine"), hit("https://d4.com/a", "Rival Ten")]
+c11b, _, cov11b, _ = run(two_org)
+check("two distinct competitors count twice",
+      cov11b["contribution_count"] == 2 and len(c11b) == 2,
+      str([x["organization_name"] for x in c11b]))
+check("coverage and the manifest agree on the count",
+      app._competitor_facts(cov11b, c11b, PROFILE)["retained_competitors"]
+      == cov11b["contribution_count"])
+check("and they agreed on the duplicated case as well",
+      app._competitor_facts(cov11, c11, PROFILE)["retained_competitors"]
+      == cov11["contribution_count"])
+
 print("\n[12] A failing search degrades, never terminates")
 comp12, ev12, cov12, c12 = run([hit("https://rival-one.com/about", "Rival One")],
                                fail_on=(cd.plan_intents(PROFILE, batch=1)[0][1],))

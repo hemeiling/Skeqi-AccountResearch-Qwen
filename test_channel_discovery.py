@@ -318,6 +318,37 @@ f_sink, _, f_cov, _ = run([hit("https://midwest-dist.com/lines",
 check("the run continued past the failure", f_cov["search_count"] >= 1)
 check("and still produced a channel entity", len(f_sink) >= 1)
 
+print("\n[11b] Two sources for one distributor is one channel entity")
+DIST = ("Great Lakes Supply is the authorized distributor for ACRO Automation "
+        "Systems in the Upper Midwest.")
+OTHER_DIST = ("Cascade Automation Sales is the authorized distributor for ACRO "
+              "Automation Systems in the Pacific Northwest.")
+PAGES["https://gl1.com/a"] = DIST
+PAGES["https://gl2.com/a"] = DIST
+PAGES["https://cas.com/a"] = OTHER_DIST
+s11, _, cov11, _ = run([hit("https://gl1.com/a", "Great Lakes Supply"),
+                        hit("https://gl2.com/a", "Great Lakes Supply")])
+check("one distributor on two domains counts once",
+      cov11["channel_entities"] == 1 and len(s11) == 1,
+      "%d counted, %d retained" % (cov11["channel_entities"], len(s11)))
+check("and does not satisfy the two-entity stop",
+      not ch.coverage_is_useful(cov11))
+check("both sources are kept on the one row", len(s11[0]["source_urls"]) == 2,
+      str(s11[0]["source_urls"]))
+check("authorized is deduplicated too", cov11["authorized"] == 1,
+      str(cov11["authorized"]))
+s11b, _, cov11b, _ = run([hit("https://gl1.com/a", "Great Lakes Supply"),
+                          hit("https://cas.com/a", "Cascade Automation Sales")])
+check("two distinct distributors count twice",
+      cov11b["channel_entities"] == 2 and len(s11b) == 2,
+      str([x["organization_name"] for x in s11b]))
+check("and that does satisfy the stop", ch.coverage_is_useful(cov11b))
+check("coverage and the manifest agree",
+      app._channel_facts(cov11b, s11b, PROFILE)["channel_entities"]
+      == cov11b["channel_entities"]
+      and app._channel_facts(cov11, s11, PROFILE)["channel_entities"]
+      == cov11["channel_entities"])
+
 print("\n[12] Each path has its own budget and cannot spend another's")
 import competitor_discovery as cd                                 # noqa: E402
 import tavily_service as tv                                       # noqa: E402
