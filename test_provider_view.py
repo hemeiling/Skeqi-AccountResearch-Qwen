@@ -197,6 +197,52 @@ for org in ("ABB Robotics", "ABB", "FANUC", "Kuka", "PMi2", "Silk EV",
             "Rockwell Automation", "Dürr Systems", "比亚迪", "宁德时代"):
     check("accepted: %s" % org, rs.is_named_organization(org))
 
+print("\n[12] Account-owned capability, including the short name")
+# From the ACRO production run: "ACRO (In-house)" survived as a competitor row.
+# Two causes - the corrector stripped the parenthetical before asking about
+# ownership, and the short name was never matched against the full legal name.
+ACCT = "ACRO Automation Systems"
+for entry, acct in [("ACRO (In-house)", ACCT), ("Ford (In-house)", "Ford Motor Company"),
+                    ("\u7ea2\u65d7 (\u5185\u90e8)", "\u7ea2\u65d7"), ("ACRO", ACCT),
+                    ("ACRO internal engineering", ACCT),
+                    ("Internal engineering team", ACCT),
+                    ("In-house robotic manipulators", ACCT)]:
+    check("owned: %s" % entry, pv._account_owned(entry, acct), acct)
+# Exact-token equality is what keeps the short-name rule narrow. Substring
+# matching would swallow every one of these.
+for entry, acct in [("Acromag", ACCT), ("ACROBAT Automation", ACCT),
+                    ("Macro Automation", ACCT), ("Acro-Tech Welding", ACCT),
+                    ("ACRO Systems Inc", ACCT),
+                    ("Fordham Automation", "Ford Motor Company"),
+                    ("Teslong Instruments", "Tesla, Inc."),
+                    ("FANUC", ACCT), ("Motoman (Yaskawa)", ACCT)]:
+    check("NOT owned: %s" % entry, not pv._account_owned(entry, acct), acct)
+check("a very short distinctive token is not used for ownership",
+      not pv._account_owned("TE", "TE Connectivity"),
+      "two characters would match far too much")
+
+print("\n[13] The ACRO row is re-filed end to end")
+ACRO_TABLE = """## Competitor Analysis / \u7ade\u4e89\u5bf9\u624b\u5206\u6790
+
+| Company | Classification | Capability | Evidence |
+| --- | --- | --- | --- |
+| FANUC, Motoman (Yaskawa) | Ecosystem | Robots | [13] |
+| ACRO (In-house) | Internal | Welding cells | [2] |
+| Acromag | Market | I/O modules | [7] |
+"""
+out13, n13 = pv.enforce(ACRO_TABLE, [{"name": "FANUC", "relationship": rs.REL_MARKET,
+                                      "provenance": rs.PROV_MARKET}], ACCT)
+rows13 = [l for l in out13.split("\n") if l.startswith("| ") and "---" not in l]
+cols13 = lambda r: [c.strip() for c in r.split("|")]
+check("ACRO (In-house) leaves the company column",
+      "ACRO" not in cols13(rows13[2])[1], cols13(rows13[2])[1])
+check("and is filed as Internal Capability",
+      any("ACRO" in x for x in n13["moved_internal"]), str(n13["moved_internal"]))
+check("Acromag is NOT swept up with it",
+      "Acromag" in out13 and not any("Acromag" in x for x in n13["moved_internal"]),
+      str(n13["moved_internal"]))
+check("FANUC stays a named organisation", "FANUC" in cols13(rows13[1])[1])
+
 print("\n{} passed, {} failed".format(len(PASS), len(FAIL)))
 for f in FAIL:
     print("  FAILED: " + f)

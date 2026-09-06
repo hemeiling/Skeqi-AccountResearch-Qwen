@@ -148,7 +148,22 @@ def _split_entries(cell):
 
 
 def _account_owned(text, account, aliases=()):
-    """The account's own engineering is not an external provider."""
+    """The account's own engineering is not an external provider.
+
+    Two things this has to get right, both learned from "ACRO (In-house)"
+    surviving a production run as a competitor row.
+
+    The ownership marker often lives in the PARENTHETICAL - "(In-house)",
+    "(内部)" - so this must be asked BEFORE any parenthetical is stripped.
+    Callers pass the full entry for exactly that reason.
+
+    And the cell is often a SHORTER form of the account name: "ACRO" for "ACRO
+    Automation Systems". Asking whether the account name appears in the cell has
+    the direction backwards. The short form is accepted, but only as an EXACT
+    match of a distinctive token - never a substring, or Acromag, ACROBAT
+    Automation, Macro Automation and Acro-Tech Welding would all be swallowed as
+    the account's own capability.
+    """
     t = (text or "").lower()
     if re.search(r"\b(internal|in-house|inhouse|own team|own engineering)\b", t) \
             or any(k in text for k in ("内部", "自有", "自研")):
@@ -157,8 +172,14 @@ def _account_owned(text, account, aliases=()):
     core = rs.core_name(account)
     if core:
         names.append(core)
-    return any(n and (rs._mentions(n, text) if n.isascii() else n in text)
-               for n in names if n)
+    if any(n and (rs._mentions(n, text) if n.isascii() else n in text)
+           for n in names if n):
+        return True
+    # Short-name ownership. Exact equality only, and only on a token distinctive
+    # enough to identify the company rather than its industry.
+    bare = _EMPH.sub("", re.sub(r"\s*\([^)]*\)\s*", " ", text or "")).strip().lower()
+    return bool(bare) and bare in {tok for tok in rs.distinctive_tokens(account)
+                                   if len(tok) >= 3}
 
 
 def enforce(report, providers=None, account="", aliases=()):
@@ -234,7 +255,9 @@ def enforce(report, providers=None, account="", aliases=()):
         keep, dropped_cap, dropped_int = [], [], []
         for entry in _split_entries(raw):
             bare = re.sub(r"\s*\([^)]*\)\s*", " ", entry).strip()
-            if _account_owned(bare, account, aliases):
+            # The FULL entry, not `bare`: the ownership marker is usually the
+            # parenthetical, and stripping it first destroys the evidence.
+            if _account_owned(entry, account, aliases):
                 dropped_int.append(entry)
             elif rs.is_named_organization(bare):
                 keep.append(entry)
