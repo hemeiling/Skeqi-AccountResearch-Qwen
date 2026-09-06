@@ -1745,6 +1745,10 @@ _CATEGORY_WORDS = {
     "tooling", "fixture", "fixtures", "integration", "analytics", "quality",
     "process", "processes", "battery", "cnc", "turnkey", "undisclosed",
     "similar", "misc", "other", "others", "tbd", "n/a", "na", "none",
+    # Same family as "undisclosed": a placeholder standing in for a name we do
+    # not have. "Unidentified Vision" shipped in the ACRO competitor table.
+    "unidentified", "unnamed", "unspecified", "anonymous", "confidential",
+    "undetermined", "tbc", "various vendors",
     # Materials. "Precision machining (Aluminum Unicasting)" qualified because
     # Aluminum is capitalised; a material is not a company either.
     "aluminum", "aluminium", "steel", "copper", "plastic", "plastics",
