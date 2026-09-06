@@ -24,6 +24,7 @@ No network, no model call. Import-safe.
 import re
 from collections import OrderedDict
 
+import channel_discovery as chdisc
 import research_service as rs
 
 DIRECT, DISTRIBUTOR_LED, REPRESENTATIVE_LED, MIXED, UNKNOWN = (
@@ -184,6 +185,11 @@ def build_profile(evidence, name, domain="", aliases=()):
     offerings, capabilities, industries, geography = OrderedDict(), OrderedDict(), OrderedDict(), OrderedDict()
     usage = OrderedDict()                     # what the account USES - kept apart
     gtm_hits = {k: OrderedDict() for k in _GTM_SIGNALS}
+    # Representation the pipeline has ALREADY retrieved. The go-to-market cues
+    # above read the account's own pages only, so without this a third-party
+    # source saying "X is the authorized distributor for the account" would sit
+    # in the evidence while the profile called the account exclusively direct.
+    retained_channel = []
     own_pages = 0
 
     for item in ev:
@@ -235,6 +241,15 @@ def build_profile(evidence, name, domain="", aliases=()):
             place = _clean_place(m.group(1))
             if own and place:
                 geography.setdefault(place, []).append(url)
+        # Any page, not just the account's own: a distributor states this on its
+        # own site. Partner language is deliberately NOT collected here - only
+        # stated representation or resale counts.
+        role, authorized, territory, quote = chdisc.classify_role(
+            text[:20000], name, "", aliases)
+        if role in chdisc.CHANNEL_ROLES:
+            retained_channel.append({"url": url, "role": role,
+                                     "authorized": bool(authorized),
+                                     "own_site": bool(own), "quote": quote})
         if own:
             hay = title + " " + text[:20000]
             for model, sigs in _GTM_SIGNALS.items():
@@ -250,7 +265,7 @@ def build_profile(evidence, name, domain="", aliases=()):
             capabilities.pop(k)
 
     business_model, bm_ev = _business_model(offerings, capabilities, usage, own_pages)
-    gtm, gtm_conf, gtm_ev = _go_to_market(gtm_hits)
+    gtm, gtm_conf, gtm_ev = _go_to_market(gtm_hits, retained_channel)
 
     prof = {
         "account": name,
@@ -339,7 +354,7 @@ def _business_model(offerings, capabilities, usage, own_pages):
     return "unknown", ev
 
 
-def _go_to_market(hits):
+def _go_to_market(hits, retained_channel=()):
     """Constrained taxonomy plus an explicit confidence, because the model alone
     cannot carry the difference between "states it sells direct" and "has a sales
     team like everybody else".
@@ -359,11 +374,27 @@ def _go_to_market(hits):
                             "urls": sorted(set(rec["urls"]))})
     direct = hits.get(DIRECT) or {}
     explicit_direct = any(r["strength"] == EXPLICIT for r in direct.values())
+    retained = list(retained_channel or [])
     ev = {"signals": signals,
           "direct_signal_count": len(direct),
           "explicit_direct_statement": explicit_direct,
           "channel_signal_count": len(hits.get(DISTRIBUTOR_LED) or {})
-                                  + len(hits.get(REPRESENTATIVE_LED) or {})}
+                                  + len(hits.get(REPRESENTATIVE_LED) or {}),
+          "retained_channel": [{"url": r["url"], "role": r["role"],
+                                "authorized": r["authorized"]} for r in retained]}
+
+    if retained:
+        # A named distributor or representative in the retained evidence is a
+        # fact about the outside world. Own-site direct-sales language cannot
+        # erase it: at most the two coexist, which is what MIXED means.
+        roles = {r["role"] for r in retained}
+        sources = {r["url"] for r in retained}
+        conf = "high" if len(sources) >= 2 else "medium"
+        if present or explicit_direct:
+            return MIXED, conf, ev
+        if roles & {chdisc.REPRESENTATIVE}:
+            return REPRESENTATIVE_LED, conf, ev
+        return DISTRIBUTOR_LED, conf, ev
 
     if len(present) > 1:
         # Both motions are evidenced. That is a finding, not a doubt, but it

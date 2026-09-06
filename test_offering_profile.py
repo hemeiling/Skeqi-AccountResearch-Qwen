@@ -246,6 +246,76 @@ check("field-level confidence agrees with the graded value",
       all(x["confidence"]["go_to_market"] == x["go_to_market_confidence"]
           for x in (one, three, six, seven)))
 
+print("\n[5d] Retained channel evidence outranks own-site DIRECT language")
+# The go-to-market cues read the account's own pages only. Without this, a
+# third-party source already in the evidence saying "X is the authorized
+# distributor for the account" would sit there unread while the profile declared
+# the account exclusively direct and switched channel discovery off.
+OWN_DIRECT = ev("https://acme.com/", "How we sell", official=True, domain="acme.com",
+                text="Acme Systems designs and builds custom automated assembly systems "
+                     "and robotic welding cells for automotive manufacturers. We sell "
+                     "directly to customers.")
+THIRD_DIST = ev("https://midwest-dist.com/lines", "Midwest Industrial Distribution",
+                domain="midwest-dist.com",
+                text="Midwest Industrial Distribution is the authorized distributor for "
+                     "Acme Systems in the Upper Midwest.")
+THIRD_REP = ev("https://ontario-rep.com/about", "Ontario Automation Group",
+               domain="ontario-rep.com",
+               text="Ontario Automation Group represents Acme Systems throughout Ontario.")
+INTEGRATOR_PAGE = ev("https://lakeside.com/about", "Lakeside Systems", domain="lakeside.com",
+                text="Lakeside Systems is a system integrator. We integrate Acme Systems "
+                     "equipment into our customers' production lines.")
+PARTNER_PAGE = ev("https://tp.com/about", "Northwind Tech", domain="tp.com",
+             text="Northwind Tech announced a partnership with Acme Systems and services "
+                  "Acme Systems equipment for its customers.")
+
+both = op.build_profile([OWN_DIRECT, THIRD_DIST], "Acme Systems", "acme.com")
+check("explicit direct plus a verified distributor is MIXED",
+      both["go_to_market_model"] == op.MIXED, both["go_to_market_model"])
+check("and channel discovery stays ready", both["channel_discovery_ready"],
+      str(both["channel_skip_reason"]))
+check("the retained representation is recorded with its source",
+      [r["role"] for r in both["go_to_market_evidence"]["retained_channel"]]
+      == ["AUTHORIZED_DISTRIBUTOR"],
+      str(both["go_to_market_evidence"]["retained_channel"]))
+check("the explicit direct statement is not erased either",
+      both["go_to_market_evidence"]["explicit_direct_statement"] is True,
+      "both facts survive; neither classifier overwrites the other")
+rep = op.build_profile([OWN_DIRECT, THIRD_REP], "Acme Systems", "acme.com")
+check("a verified representative does the same", rep["go_to_market_model"] == op.MIXED)
+check("two independent channel sources raise confidence",
+      op.build_profile([OWN_DIRECT, THIRD_DIST, THIRD_REP], "Acme Systems",
+                       "acme.com")["go_to_market_confidence"] == "high")
+
+alone = op.build_profile([THIRD_DIST], "Acme Systems", "acme.com")
+check("a distributor with no direct language gives DISTRIBUTOR_LED",
+      alone["go_to_market_model"] == op.DISTRIBUTOR_LED, alone["go_to_market_model"])
+check("a representative with no direct language gives REPRESENTATIVE_LED",
+      op.build_profile([THIRD_REP], "Acme Systems", "acme.com")["go_to_market_model"]
+      == op.REPRESENTATIVE_LED)
+
+# Precision: related is not representation.
+integ = op.build_profile([OWN_DIRECT, INTEGRATOR_PAGE], "Acme Systems", "acme.com")
+check("an integrator does NOT force MIXED", integ["go_to_market_model"] == op.DIRECT,
+      integ["go_to_market_model"])
+check("and does not reopen channel discovery", not integ["channel_discovery_ready"])
+check("nor is it recorded as retained representation",
+      not integ["go_to_market_evidence"]["retained_channel"])
+partner = op.build_profile([OWN_DIRECT, PARTNER_PAGE], "Acme Systems", "acme.com")
+check("a technology or service partner does not force MIXED either",
+      partner["go_to_market_model"] == op.DIRECT, partner["go_to_market_model"])
+check("a distributor of SOMEONE ELSE is ignored",
+      op.build_profile([OWN_DIRECT,
+                        ev("https://v.com/a", "Vector", domain="v.com",
+                           text="Vector Robotics is an authorized distributor for a "
+                                "leading robot brand across North America.")],
+                       "Acme Systems", "acme.com")["go_to_market_model"] == op.DIRECT)
+check("silence still gives UNKNOWN, never a channel",
+      not op.build_profile([ev("https://q.com/", "Q", official=True, domain="q.com",
+                               text="Q Corp designs and builds custom automated "
+                                    "assembly systems for automotive manufacturers.")],
+                           "Q Corp", "q.com")["go_to_market_evidence"]["retained_channel"])
+
 print("\n[6] Every assertion is traceable, and the result is deterministic")
 check("offerings carry their sources",
       all(v for v in p["supporting_evidence"]["offerings"].values()))
