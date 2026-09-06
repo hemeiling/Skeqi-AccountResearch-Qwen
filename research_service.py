@@ -24,6 +24,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import tavily_service as tv
 import zlib
 from pathlib import Path
 
@@ -1633,6 +1635,198 @@ def registrable_domain(url):
     return ".".join(host.split(".")[-2:])
 
 
+def tavily_verifier(name, name_cn, domain, aliases, registry, sink):
+    """The gate Tavily candidates must pass. Discovery ends here.
+
+    Fetches the page - a snippet is not evidence, and 51 of 59 candidates failed
+    verification on snippet text while passing on the real page - then applies
+    the SAME identity, collision, provenance and parent/brand rules as every
+    other source. Tavily's own ordering is discarded entirely.
+    """
+    def verify(candidates, intent_key):
+        out = {"verified": 0, "organizations": 0, "confirmed": 0,
+               "strong_indication": 0, "market_only": 0,
+               "account_relationships": 0, "evidence": []}
+        if not candidates:
+            return out
+        def grab(c):
+            try:
+                text, method = fetch_page_text(c["url"])
+            except Exception:
+                text, method = "", "error"
+            return dict(c, text=text or "", method=method)
+        fetched = [f for f in parallel_map(grab, candidates, FETCH_CONCURRENCY,
+                                           deadline=EVIDENCE_STAGE_DEADLINE,
+                                           fallback=None) if f]
+        for f in fetched:
+            body = f["text"]
+            if not body or not _plausible_host(f["url"]):
+                continue
+            ok, why, prov, entity = verify_identity(
+                body[:6000], name, name_cn, domain, f["url"], registry, aliases)
+            if not ok:
+                continue
+            out["verified"] += 1
+            tier, kind = classify(f["url"], domain)
+            item = {"url": f["url"], "title": f["title"], "tier": tier,
+                    "source_type": kind, "official": False,
+                    "domain": registrable_domain(f["url"]),
+                    "text": body, "hits": 1, "topics": [intent_key],
+                    "provenance": prov or PROV_TARGET, "entity": entity,
+                    "content_verified": True, "discovered_by": "tavily",
+                    "intent": intent_key}
+            out["evidence"].append(item)
+            # Named organisations, through the SAME extractor the pipeline uses,
+            # then through the category gate.
+            try:
+                found = registry.verify_from_target_source(body, f["url"])
+            except Exception:
+                found = []
+            for org in found:
+                if not is_named_organization(org):
+                    continue
+                rel = classify_relationship(body, name, aliases, prov)
+                out["organizations"] += 1
+                if rel == REL_CONFIRMED:
+                    out["confirmed"] += 1
+                    out["account_relationships"] += 1
+                elif rel == REL_STRONG:
+                    out["strong_indication"] += 1
+                    out["account_relationships"] += 1
+                else:
+                    out["market_only"] += 1
+                sink.append({"name": org, "category": intent_key, "relationship": rel,
+                             "source_url": f["url"],
+                             "source_domain": registrable_domain(f["url"]),
+                             "provenance": prov or PROV_TARGET,
+                             "discovered_by": "tavily"})
+        return out
+    return verify
+
+
+# ---------------------------------------------------------------------------
+# Named organisations
+# ---------------------------------------------------------------------------
+# The Company column must hold an ORGANISATION. Measured on the Tavily corpora,
+# the failure mode is not a wrong company - it is a category phrase promoted into
+# the company column: "MES provider", "Systems Integrators", "Warehouse
+# Management System", 通用焊接/MES厂商, 生态伙伴. Those are useful concepts and
+# they belong in their own field, never in a row that reads as a supplier.
+_ORG_SUFFIX_EN = (
+    "robotics", "robot", "automation", "systems", "system", "technologies",
+    "technology", "engineering", "industries", "industrial", "solutions",
+    "controls", "corporation", "corp", "inc", "llc", "ltd", "gmbh", "ag",
+    "group", "machine", "machinery", "tool", "tooling", "works", "software",
+    "instruments", "electric", "electronics", "motors", "dynamics", "labs",
+    "company", "co")
+# A phrase built only from these is a CATEGORY, whatever its capitalisation.
+_CATEGORY_WORDS = {
+    "mes", "erp", "plc", "scada", "wms", "hmi", "agv", "ndt", "oem", "tier",
+    "provider", "providers", "vendor", "vendors", "supplier", "suppliers",
+    "integrator", "integrators", "partner", "partners", "builder", "builders",
+    "manufacturer", "manufacturers", "contractor", "contractors", "system",
+    "systems", "solution", "solutions", "software", "platform", "equipment",
+    "automation", "robotics", "robot", "robots", "control", "controls",
+    "warehouse", "management", "execution", "digital", "smart", "factory",
+    "manufacturing", "industrial", "local", "unknown", "internal", "engineering",
+    "team", "capability", "technology", "technologies", "the", "a", "an", "and",
+    "of", "for", "our", "their", "its", "generic", "various", "multiple",
+}
+_CATEGORY_ZH = ("厂商", "供应商", "服务商", "集成商", "生态伙伴", "合作伙伴",
+                "内部工程团队", "工程团队", "内部团队", "通用")
+
+
+def is_named_organization(candidate):
+    """Is this a real organisation name, or a category wearing capital letters?
+
+    Precision over recall on purpose. A missed organisation costs one row; a
+    category promoted into the Company column reads as a verified supplier and is
+    worse than an empty table.
+    """
+    c = (candidate or "").strip(" .,:;·、，")
+    if len(c) < 2 or len(c) > 60:
+        return False
+    if any(k in c for k in _CATEGORY_ZH):
+        return False
+    words = [w for w in re.split(r"[\s/&,\-]+", c.lower()) if w]
+    if not words:
+        return False
+    # Nothing but industry and role words is a category, however it is written.
+    if all(w in _CATEGORY_WORDS for w in words):
+        return False
+    if re.search(r"[\u4e00-\u9fff]", c):
+        return len(c) >= 2                     # a CJK name that is not a category
+    # Latin: needs a proper-noun-looking token, or an organisational suffix on a
+    # name that is not purely category words.
+    proper = [w for w in re.split(r"[\s/&,\-]+", c)
+              if w and w[0].isupper() and w.lower() not in _CATEGORY_WORDS]
+    if proper:
+        return True
+    return words[-1] in _ORG_SUFFIX_EN and len(words) > 1
+
+
+REL_CONFIRMED, REL_STRONG, REL_MARKET = "CONFIRMED", "STRONG_INDICATION", "MARKET_ONLY"
+
+# Hedged or second-hand: the relationship is indicated, not stated. A job advert
+# for Fanuc work at Ford is real signal about who works there and is NOT a
+# procurement fact.
+_HEDGED = re.compile(
+    r"(job|jobs|vacancy|hiring|recruit|staffing|contract listing|apply directly|"
+    r"conference|summit|forum|expo|reportedly|is said to|rumou?r|expected to|"
+    r"plans to|planning to|may |could |would likely|据报道|预计|拟)", re.I)
+
+# An asserted production or commercial relationship. Naming the account is not a
+# relationship: an industry survey mentions everybody.
+# Stems, not exact word forms. An earlier version listed provider/provides/
+# provided and silently missed "will provide", which turned the single clearest
+# vendor statement in the whole corpus into MARKET_ONLY.
+_RELATIONSHIP = re.compile(
+    r"(suppl(?:y|ies|ied|ier|iers|ying)|provid(?:e|es|ed|er|ers|ing)|"
+    r"award(?:s|ed)?|win(?:s|ning)?|won |contract(?:s|ed)?|select(?:s|ed)?|"
+    r"chosen|appoint(?:s|ed|ment)?|install(?:s|ed|ing|ation)?|"
+    r"deploy(?:s|ed|ment)?|equip(?:s|ped|ment for)?|deliver(?:s|ed|ing|y)|"
+    r"partner(?:s|ed|ship)?|integrator|joint venture|work(?:s|ed) with|"
+    r"collaborat|commission(?:s|ed)?|retrofit|turnkey|"
+    r"供应商|供货|中标|承建|配套|合作伙伴|战略合作|签约|交付|集成商)", re.I)
+
+
+def classify_relationship(text, account, aliases=(), provenance=None):
+    """How strongly does this evidence tie the organisation to the account?
+
+    Relationship strength and PROVENANCE are separate dimensions and are recorded
+    separately. Provenance says how the SOURCE relates to the account; the class
+    below says what the source ASSERTS. A vendor's own page is ecosystem
+    provenance, and "ABB will provide robots for Changan Ford's body-in-white
+    welding line" is still an explicit, credible statement of the relationship -
+    capping it at STRONG because of where it was published would discard the
+    clearest evidence we ever get. Provenance is passed in only so callers can
+    record it beside the class; it never caps the class.
+
+    The ladder is about what the text supports:
+      MARKET_ONLY        the account is not named, or is named with no
+                         relationship asserted - relevant to the sector only.
+      STRONG_INDICATION  a relationship is indicated but hedged or second-hand.
+      CONFIRMED          the source explicitly asserts the relationship and
+                         names both sides.
+    """
+    body = text or ""
+    # The same ladder identity_ok uses: full name, then the name without its legal
+    # suffix, then a distinctive token. The press writes "Ford", never "Ford Motor
+    # Company", and requiring the legal name would call every real relationship
+    # market-only.
+    names = [account, core_name(account)] + list(distinctive_tokens(account)[:1]) \
+        + [a for a in (aliases or []) if a]
+    account_named = any(n and (_mentions(n, body) if n.isascii() else n in body)
+                        for n in names if n)
+    if not account_named:
+        return REL_MARKET
+    if not _RELATIONSHIP.search(body):
+        return REL_MARKET              # named, but nothing is claimed about it
+    if _HEDGED.search(body):
+        return REL_STRONG
+    return REL_CONFIRMED
+
+
 def apply_evidence_caps(site_evidence, web_evidence):
     """The production retention rule, as a function.
 
@@ -3093,7 +3287,70 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
                                   lambda m: progress("evidence", m),
                                   official_text=official_text, registry=registry,
                                   aliases=aliases)
-    evidence, dropped = apply_evidence_caps(site_evidence, web_evidence)
+    # ---- provider discovery, in parallel with the account's own retrieval ----
+    # Bounded: two batches, eight searches, stop on useful verified coverage or
+    # zero marginal yield. Never a gate - if it finds nothing, or cannot run at
+    # all, the run continues on its own evidence.
+    tavily_evidence, providers = [], []
+    tavily_cov = tv.empty_coverage()
+    general_cov = tv.empty_coverage()
+    client = None
+    if cfg.get("TAVILY_MCP_URL") or cfg.get("DASHSCOPE_WORKSPACE_ID"):
+        t = time.time()
+        try:
+            url = cfg.get("TAVILY_MCP_URL") or (
+                "https://{}.{}.maas.aliyuncs.com/api/v1/mcps/tavily-ai/sse".format(
+                    cfg.get("DASHSCOPE_WORKSPACE_ID"),
+                    cfg.get("DASHSCOPE_REGION") or "cn-beijing"))
+            key = cfg.get("TAVILY_API_KEY") or cfg.get("DASHSCOPE_API_KEY")
+            client = tv.TavilyClient(url, key).connect()
+            verifier = tavily_verifier(name, name_cn, domain, aliases, registry, providers)
+            tavily_evidence, tavily_cov = tv.discover_providers(
+                client, name, verifier, progress=progress)
+        except Exception as e:
+            limitation("providers", "Provider discovery unavailable ({}); continued on "
+                                    "the account's own retrieval".format(type(e).__name__))
+        timings["provider_discovery"] = round(time.time() - t, 1)
+
+    evidence, dropped = apply_evidence_caps(site_evidence, web_evidence + tavily_evidence)
+
+    # ---- general-evidence fallback: evaluated ONCE, after the above ----
+    # Both test accounts tripped every trigger, so this is a common path, but it
+    # is still evaluated a single time and never repeats.
+    fb_reasons = []
+    if not any(e.get("official") for e in evidence):
+        fb_reasons.append("no_official_source")
+    if not any((e.get("provenance") or PROV_TARGET) == PROV_TARGET for e in evidence):
+        fb_reasons.append("no_target_verified_source")
+    if len(evidence) < SUFFICIENT_THIRD_PARTY:
+        fb_reasons.append("thin_evidence")
+    if fb_reasons and client is not None:
+        t = time.time()
+        progress("providers", "Evidence still narrow ({}) - one general fallback batch"
+                              .format(", ".join(fb_reasons)))
+        verifier = tavily_verifier(name, name_cn, domain, aliases, registry, providers)
+        general_cov["reason_codes"] = fb_reasons
+        for key, query in tv.plan_general(name):
+            try:
+                hits = client.search(query)
+            except Exception:
+                break
+            general_cov["searches_used"] += 1
+            general_cov["used"] = True
+            general_cov["candidates"] += len(hits)
+            got = verifier(hits, key) or {}
+            general_cov["verified"] += got.get("verified", 0)
+            tavily_evidence.extend(got.get("evidence") or [])
+        general_cov["retained"] = len(tavily_evidence)
+        # Merge and re-run retention ONCE over the combined set.
+        evidence, dropped = apply_evidence_caps(site_evidence,
+                                                web_evidence + tavily_evidence)
+        timings["general_fallback"] = round(time.time() - t, 1)
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
     timings["evidence_build"] = round(time.time() - t, 1)
     # Yahoo Finance, for public companies only. The search backend does not
     # surface finance.yahoo.com (measured - see finance_service), so the quote
@@ -3282,6 +3539,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     package = {
         "company": company, "website": website, "resolved_alias": name_cn,
         "supplied_website": supplied_domain, "aliases": aliases,
+        "providers": providers,
+        "tavily_provider": tavily_cov, "tavily_general": general_cov,
         "website_replaced": bool(resolved.get("replaced_supplied")),
         "website_status": website_status, "limited_evidence": len(evidence) < 5,
         "site_blocked": site_blocked,

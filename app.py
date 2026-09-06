@@ -105,8 +105,38 @@ def execution_facts(package, attempts=None, successful_model=None):
                 "success": site_pages > 0,
                 "pages": site_pages,
             },
+            # Contribution, not just usage. A provider that ran and found nothing
+            # says so; one that never ran reports no numbers and stays unused.
+            "tavily_provider": _tavily_facts(pkg.get("tavily_provider"), evidence,
+                                             pkg.get("providers")),
+            "tavily_general": _tavily_facts(pkg.get("tavily_general"), evidence, None),
         },
     }
+
+
+def _tavily_facts(cov, evidence, providers):
+    cov = cov or {}
+    kept = [e for e in (evidence or []) if e.get("discovered_by") == "tavily"]
+    doms = {e.get("domain") for e in kept if e.get("domain")}
+    doms.discard(None)
+    facts = {
+        "used": bool(cov.get("used")),
+        "searches": int(cov.get("searches_used") or 0),
+        "extracts": int(cov.get("extracts") or 0),
+        "batches": int(cov.get("batches_run") or 0),
+        "candidates": int(cov.get("candidates") or 0),
+        "verified": int(cov.get("verified") or 0),
+        "retained": len(kept),
+        "domains": len(doms),
+    }
+    if providers is not None:
+        facts["organizations"] = len(providers)
+        facts["account_relationships"] = sum(
+            1 for p in providers
+            if p.get("relationship") in ("CONFIRMED", "STRONG_INDICATION"))
+    if cov.get("reason_codes"):
+        facts["reason_codes"] = list(cov["reason_codes"])
+    return facts
 
 
 def save_run(package, run):
