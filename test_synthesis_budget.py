@@ -268,9 +268,25 @@ check("source identity survives",
 
 print("\n[8] The emergency budget is materially lower")
 check("the normal budget is 48000 bytes", rs.SYNTHESIS_BUDGET_BYTES == 48000)
-check("the emergency budget is half of it",
-      rs.SYNTHESIS_EMERGENCY_BUDGET_BYTES == 24000,
+check("the emergency budget is materially lower",
+      rs.SYNTHESIS_EMERGENCY_BUDGET_BYTES == 30000
+      and rs.SYNTHESIS_EMERGENCY_BUDGET_BYTES < rs.SYNTHESIS_BUDGET_BYTES * 0.7,
       "not a retry of nearly the same request")
+# A ceiling below the incompressible floor can never be met: the retry would post
+# an over-budget request and fail for the same reason as the first attempt. The
+# floor is MEASURED, not estimated - an estimate put it at 22.9 KB while the real
+# request was 24.3 KB, which would have let a 24 KB ceiling pass this test and
+# still overflow in production.
+# Real sources, squeezed to the item floor: the id, title, URL, source type and
+# provenance of each row are not compressible, and stub URLs would understate
+# them. This is the smallest request the compactor can actually build.
+_floor_items = [dict(e, text="x" * sp.EMERGENCY_ITEM_FLOOR)
+                for e in load_amada()[:sp.MIN_SOURCES]]
+_floor = sp.serialized_bytes(payload_of(_floor_items)[0])
+check("the emergency budget clears the incompressible floor",
+      rs.SYNTHESIS_EMERGENCY_BUDGET_BYTES > _floor,
+      "measured floor %d B: instruction, verified blocks and %d sources at the "
+      "item floor" % (_floor, sp.MIN_SOURCES))
 em, em_stats, em_bytes = fit(load_amada(), budget=rs.SYNTHESIS_EMERGENCY_BUDGET_BYTES,
                              emergency=True)
 check("the emergency request fits its ceiling",

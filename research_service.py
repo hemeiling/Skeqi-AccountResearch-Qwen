@@ -2369,8 +2369,20 @@ twice and do not translate loosely. Under every heading use exactly:
 **中文：**
 <the same content in Chinese, same [n] citations>
 
+INDEPENDENT COMPLETENESS. If either language were deleted, the other must still be a COMPLETE
+report. In every section each block reproduces every substantive thing the other says: rows,
+logical fields, evidence citations [n], confidence values, qualifications, warnings and
+conclusions all appear in BOTH. Wording may adapt naturally; nothing substantive may be dropped.
+
+TABLES. A table in one language is a table in the other - same rows, same logical fields, same
+evidence citations, fully translated. NEVER point at the other language instead of writing the
+content: 表格同上 / 同上 / 见英文版 / 见英文部分 / 与英文相同 / same as above / see above /
+same table as above, or any equivalent.
+
 Keep company, product, brand and award names in their official original language in BOTH blocks
-(e.g. 宁德时代, CATL, 琦航数字工厂系统). Be concise: bullets, not essays.
+(e.g. 宁德时代, CATL, 琦航数字工厂系统). Be concise WITHIN each language block: bullets, not
+essays. Concision governs how much you say in a language, never whether you say it at all in the
+other one.
 
 Use exactly these 20 headings in this order for {company}{site}:
 
@@ -2709,8 +2721,16 @@ def post_json_stream(url, payload, api_key, timeout, on_text):
 # 97,986-byte AMADA request the provider rejected, which leaves real headroom
 # under a limit the provider does not document.
 SYNTHESIS_BUDGET_BYTES = 48000
-# Materially lower, not a retry of the same request: half the normal budget.
-SYNTHESIS_EMERGENCY_BUDGET_BYTES = 24000
+# Materially lower, not a retry of the same request. It cannot be arbitrarily
+# low. The instruction is ~16 KB on its own, and the verified blocks plus the
+# minimum source breadth cannot be compressed away, so a request built at the
+# floor still measures ~24.3 KB. A 24 KB ceiling was therefore unmeetable - the
+# retry would post an over-budget request and fail for the same reason as the
+# first attempt. This was true before the bilingual contract was added and
+# compacting that contract by 345 bytes moved the floor by less than half of
+# what a 24 KB ceiling needed. 30 KB is 62% of the normal budget and still far
+# under the ~98 KB the provider rejected.
+SYNTHESIS_EMERGENCY_BUDGET_BYTES = 30000
 # Emergency ceilings per tier. Same shape as the normal ones, roughly halved.
 SYNTHESIS_EMERGENCY_ITEM_BYTES = {1: 2600, 2: 2000, 3: 1400, 4: 1100, 5: 900, 6: 600}
 

@@ -34,6 +34,7 @@ import batch_service as bs
 import confidence as conf
 import language_view as lv
 import pdf_service as ps
+import bilingual_check as bc
 import job_store as js
 import research_service as rs
 
@@ -175,6 +176,16 @@ def finish(job_id):
                  stage=snapshot.get("phase"))
 
 
+def _log_bilingual_failure(exc):
+    """The completeness check is a diagnostic. If it breaks, the report is still
+    the report; say so in the log and carry on."""
+    try:
+        sys.stderr.write("[account-research] bilingual check failed: {}\n".format(exc))
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 def _last_payload(snapshot):
     """The payload record of whichever model attempt ran last. A failed run needs
     its sizes more than a successful one does."""
@@ -184,7 +195,8 @@ def _last_payload(snapshot):
     return None
 
 
-def execution_facts(package, attempts=None, successful_model=None, payload=None):
+def execution_facts(package, attempts=None, successful_model=None, payload=None,
+                    bilingual=None):
     """What this run ACTUALLY executed, for the durable manifest.
 
     Every number is absolute and comes from something that happened: model calls
@@ -235,6 +247,7 @@ def execution_facts(package, attempts=None, successful_model=None, payload=None)
         "channel_discovery": _channel_facts(pkg.get("channel_coverage"),
                                             pkg.get("channels")),
         "synthesis_payload": _payload_facts(payload),
+        "bilingual": bc.summary(bilingual),
     }
 
 
@@ -630,6 +643,17 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                        "decision_makers": [], "people_summary": {},
                        "error": str(e)[:300]}
             ok = run["status"] == 200 and run["report"]
+            # Structural bilingual completeness. Reports only: it never copies a
+            # table across, never translates, and never stops a run - an
+            # imperfect report beats no report.
+            bilingual = []
+            if ok:
+                try:
+                    bilingual = bc.check(run["report"])
+                    for line in bc.warnings(bilingual):
+                        progress("bilingual", line)
+                except Exception as e:
+                    _log_bilingual_failure(e)
             saved = save_run(package, run) if ok else None
             state = ("complete" if ok
                      else "access_denied" if run.get("access_denied")
@@ -647,6 +671,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                     ai_attempts=list(run.get("ai_attempts") or []),
                     # Sizes and counts from the preflight budget, never the body.
                     payload=run.get("payload") or {},
+                    bilingual=list(bilingual),
                     error=run["error"], model_used=run.get("model_used"),
                     fallback_used=bool(run.get("fallback_used")),
                     models_tried=run.get("models_tried") or [],
@@ -732,7 +757,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 "execution": execution_facts(
                     package, m.get("ai_attempts"),
                     (m.get("result") or {}).get("model") or m.get("model_used"),
-                    payload=m.get("payload")),
+                    payload=m.get("payload"), bilingual=m.get("bilingual")),
                 "limitations": quality.get("limitations") or [],
                 "zero_grounding": bool(quality.get("zero_grounding")),
                 "warnings": [st["message"] for st in (snap.get("stages") or [])

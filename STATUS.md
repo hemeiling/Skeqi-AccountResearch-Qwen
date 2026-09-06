@@ -794,6 +794,72 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 
 ---
 
+## Bilingual completeness (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+
+A production report wrote `2. 表格：(同上英文表格)` where a Chinese table belonged.
+The English reader sees a complete report; the Chinese one is hollow, and nobody
+reading English would ever notice.
+
+**The model wrote it.** That phrase appears nowhere in either codebase, and the
+language view is presentation only. It happened on one run of three, so it is
+probabilistic: the model choosing brevity over completeness.
+
+**Why it was allowed.** The contract described the Chinese block rather than
+requiring it - `<the same content in Chinese, same [n] citations>`, a placeholder
+with no obligation and no prohibition - two lines above `Be concise: bullets, not
+essays`. Seven of nineteen sections instruct a table, so all seven were exposed.
+A collapsed Chinese table also escapes the provider corrector, which walks pipe
+rows in either language.
+
+### Two changes, both general
+
+The shared OUTPUT LANGUAGE contract now states INDEPENDENT COMPLETENESS: if
+either language were deleted the other must still be a complete report; each
+block reproduces every substantive thing the other says, including rows, logical
+fields, evidence citations, confidence values, qualifications, warnings and
+conclusions; a table in one language is a table in the other; the cross-language
+pointers are named and forbidden; and concision is scoped WITHIN a language block
+rather than across the pair.
+
+`bilingual_check.py` is a structural check, ~150 lines, importing nothing from the
+pipeline. Four rules: a Chinese cross-reference pointer, an English pointer
+counted only when that block is the one missing the other's table, a table on one
+side only, and row counts differing by more than one. It compares structure, never
+meaning. Against the real reports it finds 3 issues in the run that collapsed a
+table and 0 in the run that did not.
+
+### It is a diagnostic, never a gate
+
+Findings become WARN lines on the run and a compact `bilingual` manifest block
+(`checked`, `warnings`, `sections`, `reasons` - counts and section names only).
+A warning cannot change terminal status, suppress the callback or persistence,
+trigger another synthesis or retrieval call, rewrite content, or alter accounting
+completeness. Twelve assertions pin exactly that.
+
+### The emergency synthesis budget: 24 KB → 30 KB
+
+Measured, not guessed. A request built at the floor - instruction, verified
+blocks, six sources at the item floor - still measures **24.3 KB**, so a 24 KB
+ceiling was unmeetable and the retry would have posted an over-budget request and
+failed for the same reason as the first attempt.
+
+This was true BEFORE the bilingual contract: the instruction was already 14.6 KB.
+Compacting the new contract by 345 bytes moved the emergency request from 24,670
+to 24,338 - less than half of what a 24 KB ceiling needed. The prompt wording was
+not the cause. The contract was compacted anyway, because it was genuinely
+repetitive, with no requirement weakened.
+
+30 KB is 62% of the normal budget and still far under the ~98 KB the provider
+rejected. A test now asserts the emergency budget exceeds the MEASURED floor, so
+the next prompt growth fails a test instead of silently posting an over-budget
+retry. The floor is measured rather than estimated: an estimate put it at 22.9 KB
+while the real request was 24.3 KB, which would have let 24 KB pass and still
+overflow in production.
+
+Engine 856 checks across 16 suites, CRM 446 across 7, zero failures.
+
+---
+
 ## P0-A lifecycle cleanup (2026-09-06) — DEPLOYED AND VALIDATED
 
 Three production runs closed the loop. The first proved the queue works and
@@ -2383,8 +2449,8 @@ cache into Neon, is designed but NOT started.
 
 Open, recorded, not started: the report's Competitor Analysis and Distributors
 sections echo scaffolding - "SOURCE OF TRUTH", "N/A per discovery" - instead of
-prose. That is a content-quality pass, deliberately kept out of the lifecycle
-work.
+prose. That is a content-quality pass, deliberately kept out of both the
+lifecycle work and the bilingual patch.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
