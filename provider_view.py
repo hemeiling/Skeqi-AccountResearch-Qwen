@@ -90,6 +90,46 @@ def provider_prompt_block(providers, account):
     return "\n".join(lines) + "\n"
 
 
+NO_COMPETITOR_EN = ("No sufficiently verified target-account competitors were "
+                    "identified from the available evidence.")
+NO_COMPETITOR_ZH = "根据现有证据，尚未确认足够可靠的目标客户竞争对手。"
+NO_COMPETITOR = "{}\n{}".format(NO_COMPETITOR_EN, NO_COMPETITOR_ZH)
+
+
+def competitor_prompt_block(competitors, profile=None):
+    """Verified competitors as FACTS. The model describes them; it does not add
+    to them, and an empty set stays empty."""
+    rows = [c for c in (competitors or []) if c.get("organization_name")]
+    if not rows:
+        why = (profile or {}).get("competitor_skip_reason")
+        return ("\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手\n"
+                "None.\n" + NO_COMPETITOR + "\n"
+                + ("Reason: " + why + "\n" if why else "")
+                + "State the sentence above verbatim. Do NOT supply competitor "
+                  "names from general knowledge, and do NOT list the account's "
+                  "own suppliers, partners or customers as competitors.\n")
+    lines = ["\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手",
+             "These compete with the ACCOUNT for customers, projects and market share.",
+             "Each was verified as a real organisation AND scored for competitive",
+             "overlap. Only these may appear as competitors.",
+             ""]
+    for c in rows:
+        lines.append(
+            "- Organization: {}\n"
+            "  Competition type: {}\n"
+            "  Competitive overlap: {}\n"
+            "  Offering overlap: {} | Industry/customer overlap: {} | Geography: {}\n"
+            "  Evidence: {}\n"
+            "  Confidence: {}".format(
+                c["organization_name"], c["competition_type"],
+                c.get("competitive_rationale") or "-",
+                c.get("offering_overlap"), c.get("customer_or_industry_overlap"),
+                c.get("geographic_or_market_overlap"),
+                ", ".join(c.get("source_domains") or []) or "-",
+                c.get("confidence") or "-"))
+    return "\n".join(lines) + "\n"
+
+
 # --------------------------------------------------------------------------
 # Output correction
 # --------------------------------------------------------------------------

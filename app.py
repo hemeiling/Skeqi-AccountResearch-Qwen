@@ -111,6 +111,36 @@ def execution_facts(package, attempts=None, successful_model=None):
                                              pkg.get("providers")),
             "tavily_general": _tavily_facts(pkg.get("tavily_general"), evidence, None),
         },
+        "competitor_discovery": _competitor_facts(pkg.get("competitor_coverage"),
+                                                  pkg.get("competitors"),
+                                                  pkg.get("profile")),
+    }
+
+
+def _competitor_facts(cov, competitors, profile):
+    """Target-competitor discovery, counted from what ran.
+
+    used is true only when a search was actually issued, so a ready profile that
+    never reached the network stays unused rather than appearing configured-on.
+    """
+    cov = cov or {}
+    rows = list(competitors or [])
+    searches = int(cov.get("search_count") or 0)
+    return {
+        "used": bool(cov.get("used")) and searches > 0,
+        "searches": searches,
+        "batches": int(cov.get("batches") or 0),
+        "candidates": int(cov.get("candidates") or 0),
+        "verified_organizations": int(cov.get("verified") or 0),
+        "retained_competitors": len(rows),
+        "direct": sum(1 for c in rows if c.get("competition_type") == "DIRECT"),
+        "partial": sum(1 for c in rows if c.get("competition_type") == "PARTIAL"),
+        "adjacent": sum(1 for c in rows if c.get("competition_type") == "ADJACENT"),
+        "rejected_same_industry": int(cov.get("rejected_same_industry") or 0),
+        "distinct_domains": int(cov.get("distinct_domains") or 0),
+        "profile_confidence": (profile or {}).get("confidence")
+                              or cov.get("profile_confidence"),
+        "skip_reason": cov.get("skip_reason"),
     }
 
 
@@ -380,6 +410,8 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                     model, company, website, package["evidence"], cfg,
                     providers=package.get("providers") or [],
                     aliases=package.get("aliases") or [],
+                    competitors=package.get("competitors") or [],
+                    profile=package.get("profile") or {},
                     apollo_people=(package.get("apollo") or {}).get("people"),
                     progress=lambda m: progress("model", m),
                     # Live output, part two: sections reach the CRM as they are

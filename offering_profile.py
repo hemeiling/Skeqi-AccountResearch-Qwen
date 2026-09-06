@@ -86,6 +86,22 @@ _GTM_CUES = {
                          r"rep(?:resentative)? network|our reps\b|代表处"),
 }
 
+# Street suffixes are not places. They appear because a company's contact page
+# puts the address immediately above the city.
+_STREET = frozenset(("road", "street", "avenue", "drive", "lane", "boulevard",
+                     "court", "parkway", "highway", "way", "suite", "circle",
+                     "place", "terrace", "rd", "st", "ave", "dr", "blvd", "hwy"))
+
+
+def _clean_place(raw):
+    words = [w for w in (raw or "").split() if w]
+    while words and words[0].lower() in _STREET:
+        words.pop(0)
+    while words and words[-1].lower() in _STREET:
+        words.pop()
+    return " ".join(words)
+
+
 _STOP_TITLE = re.compile(
     r"^(home|about|about us|contact|contact us|products?|services?|news|careers|"
     r"privacy|terms|sitemap|blog|login)$", re.I)
@@ -170,9 +186,13 @@ def build_profile(evidence, name, domain="", aliases=()):
                 # Same words, opposite direction. Recorded, never promoted.
                 for k in caps:
                     usage.setdefault(k, []).append(url)
-        for m in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),\s*(?:[A-Z]{2}\b|USA|United States)", text[:6000]):
-            if own:
-                geography.setdefault(m.group(1), []).append(url)
+        # A single space, never \s+: crawled page text folds a street address onto
+        # the city line, and "\s+" turned "... Road\nMilwaukee, WI" into the place
+        # name "Road Milwaukee", which then leaked into search queries.
+        for m in re.finditer(r"\b([A-Z][a-z]+(?: [A-Z][a-z]+)?),[ ]*(?:[A-Z]{2}\b|USA|United States)", text[:6000]):
+            place = _clean_place(m.group(1))
+            if own and place:
+                geography.setdefault(place, []).append(url)
         for model, pat in _GTM_CUES.items():
             # Title as well as body: a company's product line is usually its page
             # title, and that is where "Custom Automated Equipment" lives.

@@ -99,6 +99,13 @@ def rank_concepts(profile, limit=4):
     }
 
 
+def _as_query(term):
+    """The key is an internal concept label; the query is a search string. A
+    label like "stamping/forming" is one concept but two words to a search
+    engine, and stray whitespace from crawled text must never reach the query."""
+    return " ".join(re.split(r"[\s/|]+", (term or "").strip())).strip()
+
+
 def plan_intents(profile, batch=1, covered=()):
     """Queries built from the ranked concepts. The account NAME is deliberately
     absent: a competitor's own page never mentions the account it competes with.
@@ -116,7 +123,7 @@ def plan_intents(profile, batch=1, covered=()):
         # One qualifier per query: two narrows it to nothing, none returns the
         # whole industry.
         qual = inds[0] if (batch == 1 and inds) else (geo[0] if geo else (inds[0] if inds else ""))
-        q = "{} companies{}".format(key, (" " + qual) if qual else "")
+        q = "{} companies{}".format(_as_query(key), (" " + _as_query(qual)) if qual else "")
         out.append((key, q))
     return out
 
@@ -186,7 +193,7 @@ def empty_coverage():
             "verified": 0, "retained": 0, "distinct_domains": 0,
             "contribution_count": 0, "direct": 0, "partial": 0, "adjacent": 0,
             "rejected_same_industry": 0, "skip_reason": None,
-            "profile_confidence": None}
+            "profile_confidence": None, "queries": []}
 
 
 def coverage_is_useful(cov):
@@ -225,6 +232,7 @@ def discover(client, profile, verify, progress=None, ceiling=MAX_COMPETITOR_SEAR
                 continue
             cov["search_count"] += 1
             cov["used"] = True
+            cov["queries"].append(query)      # what ran, not what was planned
             fresh = [h for h in hits if h.get("url") not in seen]
             seen.update(h.get("url") for h in hits)
             cov["candidates"] += len(fresh)

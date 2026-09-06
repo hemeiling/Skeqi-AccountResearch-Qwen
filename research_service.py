@@ -25,6 +25,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import competitor_discovery as cdisc
+import offering_profile as op
 import tavily_service as tv
 import zlib
 from pathlib import Path
@@ -1704,6 +1706,138 @@ def tavily_verifier(name, name_cn, domain, aliases, registry, sink):
     return verify
 
 
+def _candidate_org_name(url, title, text):
+    """Who is this page ABOUT? The competitor path needs the candidate's identity,
+    not the account's, so it cannot reuse the provider verifier.
+
+    Preference order is deliberate: the registrable domain's own label is the
+    most reliable claim a company makes about itself, and a title is second
+    because titles carry taglines and section names.
+    """
+    label = registrable_domain(url).split(".")[0]
+    head = identity_region(title, text)
+    if label and len(label) >= 3 and label.lower() in head:
+        # The site's own masthead confirms its own stem.
+        for cand in re.findall(r"\b([A-Z][A-Za-z0-9&.\-]{2,}(?:\s+[A-Z][A-Za-z0-9&.\-]{1,}){0,3})\b",
+                               (title or "") + " " + (text or "")[:400]):
+            if label.lower() in cand.lower().replace(" ", "") and is_named_organization(cand):
+                return cand.strip()
+    clean = re.sub(r"\s*[|\-\u2013\u2014].*$", "", (title or "")).strip()
+    if is_named_organization(clean):
+        return clean
+    return ""
+
+
+def competitor_verifier(profile, name, name_cn, aliases, sink):
+    """The gate a competitor candidate must pass. BOTH sides are verified.
+
+    Provider discovery asks "is this page about the ACCOUNT". That question is
+    wrong here: a competitor's page is about the COMPETITOR and will rarely
+    mention the account at all. So this verifies the candidate's own identity,
+    then scores competitive overlap against the account's offering profile, and
+    admits nothing on industry membership alone.
+
+    A snippet is never evidence. Pages are fetched first, exactly as everywhere
+    else in the pipeline.
+    """
+    import competitor_discovery as cdisc
+
+    def verify(candidates, intent_key):
+        out = {"verified": 0, "competitors": 0, "direct": 0, "partial": 0,
+               "adjacent": 0, "rejected_same_industry": 0, "fetched": 0,
+               "evidence": []}
+        if not candidates:
+            return out
+
+        def grab(c):
+            try:
+                text, method = fetch_page_text(c["url"])
+            except Exception:
+                text, method = "", "error"
+            return dict(c, text=text or "", method=method)
+
+        fetched = [f for f in parallel_map(grab, candidates, FETCH_CONCURRENCY,
+                                           deadline=EVIDENCE_STAGE_DEADLINE,
+                                           fallback=None) if f]
+        for f in fetched:
+            body = f["text"]
+            if not body or not _plausible_host(f["url"]):
+                continue
+            out["fetched"] += 1
+            org = _candidate_org_name(f["url"], f.get("title") or "", body)
+            if not org:
+                continue                       # cannot name it -> cannot list it
+            # The candidate must not be the account itself, nor a name we already
+            # hold as the account's own provider.
+            if _mentions(name, org) or (name_cn and name_cn in org) \
+                    or any(a and _mentions(a, org) for a in (aliases or [])):
+                continue
+            out["verified"] += 1
+            dims = cdisc.score_overlap(body, profile, name, aliases)
+            klass = cdisc.classify(dims)
+            if klass is cdisc.NOT_A_COMPETITOR:
+                if dims.get("customer_or_industry_overlap"):
+                    out["rejected_same_industry"] += 1
+                continue
+            out["competitors"] += 1
+            out[klass.lower()] += 1
+            rationale = "; ".join(filter(None, [
+                ("offerings: " + ", ".join(dims["offering_matches"])) if dims["offering_matches"] else "",
+                ("industries: " + ", ".join(dims["industry_matches"])) if dims["industry_matches"] else "",
+                ("geography: " + ", ".join(dims["geography_matches"])) if dims["geography_matches"] else "",
+            ])) or "offering overlap"
+            row = {
+                "organization_name": org,
+                "organization_key": normalize_org_key(org),
+                "competition_type": klass,
+                "offering_overlap": dims["offering_overlap"],
+                "customer_or_industry_overlap": dims["customer_or_industry_overlap"],
+                "geographic_or_market_overlap": dims["geographic_or_market_overlap"],
+                "competitive_rationale": rationale,
+                "source_urls": [f["url"]],
+                "source_domains": [registrable_domain(f["url"])],
+                # Provenance stays a SEPARATE dimension: a competitor may also be
+                # a provider, and one classification must not overwrite the other.
+                "provenance": PROV_MARKET,
+                "confidence": ("high" if klass == cdisc.DIRECT
+                               else "medium" if klass == cdisc.PARTIAL else "low"),
+                "discovered_by": "tavily",
+                "intent": intent_key,
+            }
+            _merge_competitor(sink, row)
+            out["evidence"].append({
+                "url": f["url"], "title": f.get("title") or org,
+                "domain": registrable_domain(f["url"]),
+                "text": body, "tier": 5, "source_type": "competitor-page",
+                "official": False, "hits": 1, "topics": [intent_key],
+                "provenance": PROV_MARKET, "content_verified": True,
+                "discovered_by": "tavily", "competitor": org,
+            })
+        return out
+    return verify
+
+
+def normalize_org_key(org):
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (org or "").lower())
+
+
+def _merge_competitor(sink, row):
+    """One row per organisation. A replayed or repeated candidate merges its
+    sources instead of appending a duplicate."""
+    for existing in sink:
+        if existing["organization_key"] == row["organization_key"]:
+            for k in ("source_urls", "source_domains"):
+                existing[k] = sorted(set(existing[k]) | set(row[k]))
+            # Keep the strongest classification seen.
+            order = {"ADJACENT": 0, "PARTIAL": 1, "DIRECT": 2}
+            if order.get(row["competition_type"], 0) > order.get(existing["competition_type"], 0):
+                existing["competition_type"] = row["competition_type"]
+                existing["competitive_rationale"] = row["competitive_rationale"]
+                existing["confidence"] = row["confidence"]
+            return
+    sink.append(row)
+
+
 # ---------------------------------------------------------------------------
 # Named organisations
 # ---------------------------------------------------------------------------
@@ -2326,43 +2460,29 @@ A 2x2: Strengths / 优势 and Weaknesses / 劣势 on top, Opportunities / 机会
 Concise, evidence-based points. Do NOT invent weaknesses to fill the table — fewer entries is correct.
 
 ## Competitor Analysis / 竞争对手分析
-Who competes with SKEQI for THIS account's automation, equipment, inspection, logistics and
-manufacturing-system opportunities. NOT a generic SKEQI competitor list, NOT the target's own
-product-market rivals, and NOT battery equipment unless battery manufacturing is genuinely
-relevant here.
-1. HOW THIS ACCOUNT OPERATES. What it makes; which processes matter strategically; whether
-manufacturing is internal, outsourced, contract-manufactured, JV or hybrid; who owns the relevant
-plants; who specifies equipment, who buys it, who runs it; which contract manufacturers, tier
-suppliers, JVs or production partners matter; which factories, expansions or product introductions
-create demand. Do NOT assume the target owns the production environment. Where manufacturing is
-outsourced, analyse the supplier network instead.
-2. RELEVANT DOMAINS. Name only the capability domains this account's model supports - e.g.
-precision or electronics assembly, cell/module/PACK, automotive components, laser processing,
-machine vision, metrology, X-ray/NDT, end-of-line test, robotics, material handling, intelligent
-logistics, ASRS, PLC/motion, traceability, MES/digital factory, analytics, quality automation,
-turnkey integration, recycling. Omit the rest.
-3. WHO SKEQI WOULD ACTUALLY MEET. Per domain: incumbent providers; suppliers at target-owned
-plants; suppliers at the contract manufacturers and component suppliers producing for the target;
-system integrators; machine builders; specialist vendors; the target's own engineering; the
-partners' internal capability.
-4. CLASSIFY each one, and never upgrade a weaker class into a customer relationship:
-**Verified incumbent** evidence ties it to the target or a target program/facility;
-**Ecosystem incumbent** tied to a manufacturer or supplier producing for the target;
-**Likely account competitor** could credibly compete, incumbency unconfirmed;
-**Market alternative** technically relevant, no demonstrated account relationship;
-**Internal / insourced** the target or its partner can build it themselves.
-5. TABLE the significant ones: Company | Classification | Capability | Product, factory, program
-or partner | Evidence [n] | Why it competes with SKEQI | Incumbency | Strength | Gap | SKEQI
-differentiation | Threat H/M/L | Confidence Verified/Likely/Possible.
-6. THE BUYING BATTLEFIELD. Say where the decision actually happens: target procurement, target
-manufacturing-engineering specification, contract-manufacturer procurement, component-supplier
-procurement, joint development, integrator selection, expansion bidding, or retrofit projects.
-7. SKEQI STRATEGY. Top threats; where SKEQI can realistically enter; where incumbency is hard to
-displace; where to complement rather than replace; differentiation; white space; which partner or
-entity SKEQI may have to sell through; 3-5 specific discovery questions.
-If direct evidence is thin, widen to the manufacturing ecosystem, production partners, comparable
-facilities and credible alternatives rather than concluding that no competitors were identified.
-Keep confidence honest; never invent a relationship.
+Who competes with THIS ACCOUNT - the target company itself - for its customers, projects, contracts
+and market share. This section is about the account's rivals, never about rivals of the company
+this report is written for; incumbency, displacement and SKEQI positioning belong in Existing
+Automation Providers and are answered there. The account's own suppliers, technology providers,
+partners and customers are NOT its competitors unless separate evidence shows they also compete
+with it. Operating in the same industry is NOT competition.
+1. SOURCE OF TRUTH. Use ONLY the organisations listed in the VERIFIED TARGET COMPETITORS block.
+Do not add names from general knowledge, do not infer a competitor from an industry, and do not
+promote a supplier or partner into this section. If the block is empty, say so and stop: state
+verbatim "No sufficiently verified target-account competitors were identified from the available evidence." and "根据现有证据，尚未确认足够可靠的目标客户竞争对手。"
+2. TABLE the verified competitors: Competitor | Competition Type DIRECT/PARTIAL/ADJACENT |
+Competitive Overlap | Relevant Offerings | Customer/Industry Overlap | Geographic Overlap |
+Evidence [n] | Confidence. One row per organisation in the verified block, and no others.
+3. COMPETITIVE POSITION. For each competitor, what the evidence says about where the account is
+stronger or weaker: offering breadth, technology, capacity, quality, cost position, delivery,
+certification, geography or customer access. Distinguish an evidenced difference from an inference.
+4. PRESSURE ON THE ACCOUNT. What this competitive set demands of the account operationally -
+cost per unit, throughput, quality and traceability, cycle time, ramp speed, localisation,
+new-product introduction. Only what the evidence supports.
+5. SKEQI IMPLICATION. How that competitive pressure creates manufacturing, automation, inspection,
+logistics or digital-factory needs SKEQI could address, and 3-5 specific discovery questions.
+Do not turn this into an incumbency analysis; that lives in Existing Automation Providers.
+Keep confidence honest; never invent a competitor or a relationship.
 
 ## Existing Automation Providers / 现有自动化供应商
 Reconstruct the automation, equipment and manufacturing-technology ecosystem behind THIS account's
@@ -2644,7 +2764,8 @@ A short honest report is the correct output here. Do not pad it.
 
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
-               apollo_people=None, on_section=None, providers=None, aliases=()):
+               apollo_people=None, on_section=None, providers=None, aliases=(),
+               competitors=None, profile=None):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -2670,6 +2791,7 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     # used afterwards to correct what it wrote.
     import provider_view as pv
     prompt += pv.provider_prompt_block(providers, company)
+    prompt += pv.competitor_prompt_block(competitors, profile)
     content = [{"text": prompt}] if is_multi else prompt
     params = {} if is_multi else {"result_format": "message"}
     started = time.time()
@@ -2759,7 +2881,8 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
 
 def synthesize_with_fallback(model, company, website, evidence, cfg,
                              timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None,
-                             on_section=None, providers=None, aliases=()):
+                             on_section=None, providers=None, aliases=(),
+                             competitors=None, profile=None):
     """Synthesise with the requested model, falling back on access denial.
 
     An unusable model must not become an empty report: the user asked for
@@ -2777,7 +2900,8 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
     for candidate in model_candidates(cfg, preferred=model):
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
                          apollo_people=apollo_people, on_section=on_section,
-                         providers=providers, aliases=aliases)
+                         providers=providers, aliases=aliases,
+                         competitors=competitors, profile=profile)
         attempts.append({"model": candidate, "kind": "synthesis",
                          "status": run.get("status"),
                          "input_tokens": run.get("input_tokens") or 0,
@@ -3384,12 +3508,47 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         evidence, dropped = apply_evidence_caps(site_evidence,
                                                 web_evidence + tavily_evidence)
         timings["general_fallback"] = round(time.time() - t, 1)
+    # ---- the account's offering profile, from RETAINED evidence only ----
+    # Built here, after retention, because that is the first point at which the
+    # evidence set is the one the report will actually stand on.
+    t = time.time()
+    profile = op.build_profile(evidence, name, domain, aliases)
+    timings["offering_profile"] = round(time.time() - t, 1)
+    progress("profile", "Account profile: {} | sells {} | go-to-market {}".format(
+        profile["business_model"], ", ".join(profile["capabilities"][:3]) or "unclear",
+        profile["go_to_market_model"]))
+
+    # ---- target-competitor discovery, gated on that profile ----
+    competitors = []
+    comp_cov = cdisc.empty_coverage()
+    comp_cov["profile_confidence"] = profile.get("confidence")
+    if client is not None:
+        t = time.time()
+        cverify = competitor_verifier(profile, name, name_cn, aliases, competitors)
+        comp_evidence, comp_cov = cdisc.discover(client, profile, cverify, progress=progress)
+        timings["competitor_discovery"] = round(time.time() - t, 1)
+        if comp_evidence:
+            # Verified competitor pages are real sources and re-enter retention
+            # with everything else. Their SNIPPETS never did.
+            evidence, dropped = apply_evidence_caps(
+                site_evidence, web_evidence + tavily_evidence + comp_evidence)
+    else:
+        comp_cov["skip_reason"] = "retrieval provider unavailable"
+    if not competitors and comp_cov.get("skip_reason"):
+        limitation("competitors", "Competitor discovery skipped - {}"
+                                  .format(comp_cov["skip_reason"]))
+    elif not competitors:
+        limitation("competitors", "No sufficiently verified target-account "
+                                  "competitors were identified")
+
     if client is not None:
         try:
             client.close()
         except Exception:
             pass
-    timings["evidence_build"] = round(time.time() - t, 1)
+    # t_all, not t: t is reassigned by each optional stage, so measuring from it
+    # timed only whichever stage happened to run last.
+    timings["evidence_build"] = round(time.time() - t_all, 1)
     # Yahoo Finance, for public companies only. The search backend does not
     # surface finance.yahoo.com (measured - see finance_service), so the quote
     # page for the validated ticker is fetched directly.
@@ -3577,7 +3736,8 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     package = {
         "company": company, "website": website, "resolved_alias": name_cn,
         "supplied_website": supplied_domain, "aliases": aliases,
-        "providers": providers,
+        "providers": providers, "competitors": competitors,
+        "profile": profile, "competitor_coverage": comp_cov,
         "tavily_provider": tavily_cov, "tavily_general": general_cov,
         "website_replaced": bool(resolved.get("replaced_supplied")),
         "website_status": website_status, "limited_evidence": len(evidence) < 5,

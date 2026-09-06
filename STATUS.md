@@ -1,9 +1,10 @@
 # Account Research — Project Status
 
-> Last updated: 2026-09-05
+> Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: Production parity; cost accounting live; awaiting the first instrumented run
-> Latest change: engine `77049ac`, CRM `0756f48` — both deployed and verified
+> Current phase: Competitor Analysis redefinition — Commits 1-3.5 done, Commit 4 not started
+> Latest change: engine competitor pipeline integration (local, NOT deployed);
+> deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
 
 ---
@@ -790,6 +791,115 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
 4. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
+
+---
+
+## Competitor Analysis redefinition (2026-09-06) — Commits 1-3.5 IMPLEMENTED, NOT DEPLOYED
+
+**What changed conceptually.** "Competitor Analysis" used to mean *who competes
+with SKEQI for this account's opportunities*. It now means *who competes with the
+TARGET ACCOUNT*. The SKEQI-incumbent question was not deleted; it lives in
+**Existing Automation Providers**, which already carried incumbency, switching
+difficulty and COMPETE/REPLACE/COMPLEMENT/INTEGRATE.
+
+| Commit | What |
+|---|---|
+| `4a6e990` | Ownership fix: a short brand name no longer marks an entry account-owned |
+| `a1790f6` | `offering_profile.py` — what the account SELLS vs what it USES, plus go-to-market |
+| `0e191ff` | Go-to-market correction: DIRECT needs positive selling evidence, never absence |
+| `b681243` | `competitor_discovery.py` — ranked concepts, three independent overlap dimensions |
+| (this)   | Commit 3.5 — pipeline integration, synthesis representation, manifest |
+
+### The production flow after Commit 3.5
+
+```
+retrieval -> retention (P0-B) -> offering profile (retained evidence only)
+                                      |
+                     competitor_discovery_ready?
+                       no -> skip, record reason, NO searches
+                       yes -> <=6 Tavily searches in 2 batches, early stop
+                                      |
+                     candidate URLs -> FETCH the page -> verify the CANDIDATE's
+                     identity -> score 3 overlap dimensions -> classify
+                                      |
+                     competitor pages re-enter retention as evidence (tier 5)
+                                      |
+                     package: competitors / profile / competitor_coverage
+                                      |
+                     synthesis: VERIFIED TARGET COMPETITORS block
+```
+
+### Invariants this integration must keep
+
+1. **A snippet is discovery, never evidence.** Tavily results are candidate URLs.
+   Only a fetched, verified page becomes evidence. Covered by a test that gives
+   the snippet richer text than the page.
+2. **Both sides are verified.** Provider discovery asks "is this page about the
+   account". A competitor's page is about the COMPETITOR, so the candidate's own
+   identity is verified instead, then overlap is scored.
+3. **Same industry is not competition.** Industry overlap alone yields
+   `NOT_A_COMPETITOR` and increments `rejected_same_industry`.
+4. **Vocabularies stay disjoint.** Competitors use DIRECT / PARTIAL / ADJACENT.
+   The provider relationship model (CONFIRMED / STRONG_INDICATION / MARKET_ONLY)
+   and provenance (target / ecosystem / market) are preserved as separate
+   dimensions on the same row, never overwritten by one another.
+5. **No invention.** With nothing verified, synthesis is instructed to state
+   verbatim, in both languages, that no competitors were confirmed.
+
+### Manifest
+
+`execution.competitor_discovery`, absolute counters only, no monetary field:
+
+```
+used (true only if a search actually ran), searches, batches, candidates,
+verified_organizations, retained_competitors, direct, partial, adjacent,
+rejected_same_industry, distinct_domains, profile_confidence, skip_reason
+```
+
+The CRM's `public/execution-manifest.js` gained the matching slot and backfills
+it into manifests written before the block existed, so a stored older manifest
+gains the numbers instead of dropping them.
+
+### The seeded provider query — DELIBERATELY UNTOUCHED
+
+`research_service.py` still contains
+`'"{}" Siemens ABB FANUC KUKA supplier'.format(name)`. It belongs to **provider**
+discovery, not competitor discovery. Removing it changes provider recall, and the
+agreed acceptance test for that removal is a Ford control run showing recall is
+preserved without vendor seeding. That run is billable and has not been approved.
+Changing it here would also confound the review of this commit. It is its own
+small commit, later.
+
+### Defects found by running against stored ACRO evidence
+
+1. **Street address leaked into the place name.** `\s+` in the geography regex
+   spanned a newline, producing the "place" `Road\nMilwaukee`, which then reached
+   a search query. Fixed: single space, plus street-suffix stripping.
+2. **Concept labels are not query strings.** `stamping/forming` was sent to search
+   with the slash intact. Fixed: `_as_query()` normalises the label for the query
+   while the internal key keeps its shape.
+3. **`timings["evidence_build"]` measured the wrong span** — it read a `t` that
+   each optional stage reassigns, so it timed whichever stage ran last. Now
+   measured from `t_all`.
+
+### Semantic problem to settle BEFORE Commit 4
+
+ACRO's stored evidence classifies go-to-market as **DIRECT** on the single phrase
+"our sales team" from its own contact page. That is positive evidence, so the
+Commit 2 rule is satisfied, but it is thin, and a verified-DIRECT profile makes
+`channel_discovery_ready` false. Commit 4 would therefore skip channel discovery
+for ACRO on one phrase. Decide whether DIRECT needs corroboration (two cues, or a
+cue plus no channel language) before channel discovery is gated on it.
+
+### Tests
+
+`test_competitor_integration.py` — 66 checks, no network, no model call. Runs on
+the stored ACRO package when present and on an inline fixture otherwise
+(`COMPETITOR_FIXTURE_ONLY=1` forces the fixture path). Engine total: **599 checks
+across 15 suites, zero failures.** CRM `test-execution-manifest.js`: 64/64.
+
+`test-identity-state.js` errors in section [E] with no message; it needs a live
+`DATABASE_URL` and fails identically on HEAD. Pre-existing, unrelated.
 
 ---
 
@@ -1712,6 +1822,14 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
+**Competitor Analysis now means the target account's competitors.** Commits 1
+through 3.5, engine-side, reviewed section by section. Not deployed, no paid run.
+See the dated section above for the flow, the invariants, the manifest shape, the
+three defects found against stored ACRO evidence, and the one semantic question
+Commit 4 depends on.
+
+### Previously
+
 **Production parity on both services, and the truncation defect closed.**
 
 | Commit | Repo | What |
@@ -1730,24 +1848,21 @@ this, and Tesla was never regenerated.
 
 ## 15. Current Work In Progress
 
-Nothing in flight. Both services are deployed and match their branches.
-
-**Next up, agreed:** Tavily / provider redundancy for retrieval. Deliberately held
-until the production baseline was clean, which it now is.
+**Commit 3.5 is complete and committed locally; nothing is half-written.** Neither
+repository is deployed at this commit. Commit 4 (target distributor / channel
+discovery) is designed but NOT started, and is held for review of 3.5.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. **Tavily / provider redundancy** — the agreed next retrieval improvement.
-2. **Language purity** (§0i, item 1): stop Chinese prose appearing in the English
-   view. Two causes, one prompt-side and one in the generated capability table.
-3. **Placeholder asymmetry** (§0i, item 2): `is_placeholder` treats the two halves
-   of a bullet differently.
-4. **Bilingual invariant** (§0i, item 3): the saved report should carry
-   independent `content_en` / `content_zh` per section rather than being filtered
-   out of one document at render time.
-5. Set `CRM_CALLBACK_URL` and `APOLLO_API_KEY` on Render; PowerCo has never run.
+1. Review Commit 3.5; settle whether a single DIRECT cue should gate channel
+   discovery, since Commit 4 depends on that answer.
+2. **Commit 4** — target distributor / channel discovery. Not started.
+3. Decide when to deploy Commits 1-3.5 and whether to spend one Ford control run.
+4. The seeded provider query is its own small commit, with a Ford recall check.
+5. Language purity, placeholder asymmetry and the bilingual report architecture
+   (§0i) remain open.
 
 ---
 
@@ -1805,8 +1920,8 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-The display-filter truncation defect is CLOSED (§0i). Both services are deployed
-and match their branches. Nothing is in flight.
+Commit 3.5 (target competitor pipeline integration) is committed in both repos and
+NOT deployed. Commit 4 has not been started. Stopped for review, as instructed.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
@@ -1818,7 +1933,8 @@ Start Tavily / provider redundancy, or take one of the three items §0i leaves
 open. Read the top of `CLAUDE.md` first: best-effort continuation, the durability
 invariant and the incremental-output requirement all constrain that work.
 
-**Uncommitted changes:** none.
+**Uncommitted changes:** none. Deployed revisions are engine `55f6ffe` and CRM
+`4bb64d5`, both BEHIND the local branches.
 
 **Application currently runnable:** Yes. `PORT=5062 .venv/bin/python app.py`.
 Suites: `test_continuation.py`, `test_live_output.py`, `test_bilingual_display.py`
