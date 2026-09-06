@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: Competitor Analysis redefinition — all four commits done, awaiting review
+> Current phase: Competitor Analysis redefinition — commits 1-4 plus five audit fixes; awaiting deploy decision
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -791,6 +791,98 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
 4. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
+
+---
+
+## Pre-deployment audit fixes (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+
+A full static and integration audit of the redefinition work found five defects.
+All five are fixed, each in its own commit.
+
+| Commit | Repo | Defect |
+|---|---|---|
+| `92f7e40` | engine | A — optional stages could end the run |
+| `ce4ab04` | engine | B — the provider corrector damaged Competitor Analysis |
+| `096acc3` | engine | C — early stopping counted pages, not organisations |
+| `47f0d88` | engine | D — retained channel evidence could be overruled by own-site DIRECT |
+| `8533e5e` | CRM | E — the Tavily rollup counted two of four paths |
+
+### A. Failure isolation — the one that mattered most
+
+The profile, competitor discovery and channel discovery were not wrapped.
+An exception in any of them reached the outer handler, which marks the job
+errored and tells the CRM the run failed, discarding every source already
+retrieved. Provider discovery had always been wrapped; these three were not.
+
+Guarded at two depths. Inside each discovery loop the planner and the verifier
+are wrapped separately from the search call, so a crash on the fourth query keeps
+what the first three found. At the pipeline, each stage logs, records a
+limitation, marks its coverage `failed` and continues. A profile that cannot be
+built returns `op.unavailable_profile()`, shaped like a real profile and ready
+for neither path.
+
+Handlers write the traceback to stderr. A survivable defect must not be invisible.
+
+### B. Corrector scope
+
+`PROVIDER_HEADINGS` still contained "competitor analysis" from the old semantics.
+Whenever synthesis headed the organisation column Company, Organization or 公司 —
+all of which the OLD prompt specified — every verified target competitor's
+confidence was rewritten to "market context / 市场参考". A column headed
+"Competitor" escaped only because that word is absent from the provider matcher.
+
+Provider correction is now restricted to Existing Automation Providers.
+
+Two small semantic fixes rode along: the synthesis blocks now separate
+"discovery ran and nothing met the bar" from "discovery was not performed", each
+with its own verbatim bilingual sentence; and a comment claiming the competitor
+verifier rejects the account's own providers was corrected, because it does not
+and must not.
+
+### C. Unique-organisation stopping
+
+Both paths incremented stop counters per PAGE. One rival on three domains
+satisfied "three competitors, one direct, two domains". Each verifier now exposes
+`tally()` over its deduplicated sink and the loops SET those counters, so
+coverage and the manifest report the same entity count for the same run.
+Page-level facts (candidates, verified pages, rejections, domains) stay
+page-level.
+
+### D. Channel reconciliation
+
+The go-to-market cues read own-site pages only, so a third-party page already in
+the retained evidence naming a distributor was never read. The profile now
+classifies representation across ALL retained evidence. Direct language plus a
+named distributor is MIXED with channel discovery ready. Integrators, technology
+partners and service partners still do not force MIXED.
+
+`offering_profile` now imports `channel_discovery`, which is safe because that
+module imports nothing from the pipeline.
+
+### E. Tavily rollup
+
+Four paths spend Tavily; the rollup summed two. Now all four, with the components
+shown beside the total. Legacy manifests need no migration: a missing block reads
+as NULL and COALESCE makes it zero. No pricing changes — `cost_usd` stays null.
+
+### Verified after the fixes
+
+- 30 pairwise import orders clean in fresh processes.
+- Ceilings unchanged: provider 8, competitor 6, channel 4, three-path total 18,
+  general fallback 4 separately.
+- All five competitor column headers survive the corrector untouched.
+- No stale SKEQI-competitor instruction in any prompt, template or the CRM.
+- Engine **820 checks across 16 suites**, CRM **391 checks**, zero failures.
+
+### Known, accepted, not defects
+
+- Competitor and channel tables have no corrector enforcement, only prompt
+  instruction. The design listed it; it was never in scope for these commits.
+  Defence in depth, not a correctness gap.
+- `researchSections.js` in the CRM is untracked, unused by any route, and carries
+  old battery-centric competitor wording. Dead code; do not wire it up as is.
+- The seeded provider query is untouched and still needs its own controlled
+  provider-recall run.
 
 ---
 
@@ -1895,11 +1987,10 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Competitor Analysis now means the target account's competitors, and the report
-has a channel section.** All four commits plus the go-to-market confidence
-correction, engine-side, reviewed stage by stage. Not deployed, no paid run. See
-the dated section above for the flow, the two verification asymmetries, the role
-model, the budgets and the manifest shapes.
+**The redefinition is complete and its pre-deployment audit is closed.** Four
+commits, a go-to-market correction, and five audit fixes. Not deployed, no paid
+run. The audit section above lists every defect and how it was fixed; the section
+after it describes the pipeline itself.
 
 ### Previously
 
@@ -1921,20 +2012,20 @@ this, and Tesla was never regenerated.
 
 ## 15. Current Work In Progress
 
-**Commits 1-4 are complete and committed locally; nothing is half-written.**
-Neither repository is deployed at these commits, and no paid research has run
-against them. Held for review.
+**Nothing is in flight.** Commits 1-4, the go-to-market correction and audit
+fixes A-E are committed in both repositories. Neither is deployed, and no paid
+research has run against any of it. The next decision is whether to deploy.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. Review Commits 1-4 and decide when to deploy them.
-2. Decide whether to spend one Ford or ACRO control run: nothing in this
-   workstream has been exercised against live retrieval.
-3. The seeded provider query is its own small commit, with a Ford recall check.
-4. Worst-case searches per run rose from 12 to 22 including the general fallback.
+1. Decide whether to deploy. Both repositories are behind their branches.
+2. Decide whether to spend one control run: nothing in this workstream has been
+   exercised against live retrieval or a real model call.
+3. Worst-case searches per run rose from 12 to 22 including the general fallback.
    Confirm that is acceptable before the first live run.
+4. The seeded provider query is its own small commit, with a recall check.
 5. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
 
@@ -1994,9 +2085,9 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-All four commits of the Competitor Analysis redefinition, plus the go-to-market
-confidence correction, are committed in both repos and NOT deployed. Stopped for
-review, as instructed.
+The Competitor Analysis redefinition and its pre-deployment audit are both
+closed. Five audit defects found and fixed as commits A-E. Nothing deployed, no
+paid research run. Stopped for the deploy decision, as instructed.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
