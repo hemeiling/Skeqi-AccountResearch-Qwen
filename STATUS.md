@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: Discovery simplified to GenAI + Tavily; deploy pending
+> Current phase: P0-A durable research queue built; deploy pending
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -791,6 +791,84 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
 4. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
+
+---
+
+## P0-A — durable research queue (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+
+**24 of the first 46 jobs ended `interrupted`.** A run lived in one Python
+process's memory: `POST /api/research` wrote a dictionary, started a daemon
+thread and returned, so any restart took every in-flight run with it. The AMADA
+control run died at 25% when the engine restarted while two other jobs were
+running on the same single-worker instance.
+
+### The architecture
+
+```
+CRM ──POST──▶ web service ──INSERT queued──▶ Neon job row ◀── 2 workers claim
+                                                            (1 job each)
+```
+
+The job table IS the queue. No Redis, no Celery, no broker: Postgres gives the
+two guarantees this needs, an atomic claim under concurrency and durability
+across a crash.
+
+### The fencing token
+
+`(job_id, worker_id, attempts)` is in the WHERE clause of every worker-owned
+write: heartbeat, state, callback pre-check and terminal write. A worker whose
+lease lapsed matches zero rows and raises `OwnershipLost` rather than silently
+continuing. **This is what stops two workers finishing the same job** after a
+lease recovery, which is otherwise unavoidable.
+
+| Setting | Value |
+|---|---|
+| `MAX_CONCURRENT_RESEARCH_JOBS` | 2 |
+| `RESEARCH_WORKER_SLOTS` | 1 |
+| `RESEARCH_LEASE_SECONDS` | 90, three heartbeats |
+| `RESEARCH_HEARTBEAT_SECONDS` | 30 |
+| `RESEARCH_MAX_ATTEMPTS` | 3 |
+
+### Schema ownership — the CRM, and only the CRM
+
+Seven columns (`queued_at`, `worker_id`, `heartbeat_at`, `lease_expires_at`,
+`attempts`, `payload`, `runtime_state`) and two partial indexes
+(`idx_arq_claimable`, `idx_arq_leases`) are created in the CRM's `initDb`, at
+`db.js` around line 1100. **The engine issues no DDL at all.** A worker calls
+`verify_schema()` at startup and exits with a message naming the missing columns
+if the CRM's migration has not run. One migration owner, not two.
+
+### `interrupted` is no longer written
+
+It named a run nobody could account for. A lapsed lease says it better: the job
+returns to `queued` and another worker takes it. Only a job that exhausts three
+attempts is failed, by the reaper, with the count in the error text. The 24
+historical rows keep the state and the CRM keeps rendering it.
+`reconcileOrphanJob` is deleted: it inferred death from a 404 that can no longer
+happen, since the engine reads jobs from the same database.
+
+### Status is Neon-authoritative
+
+`GET /api/job/:id` reads the database, never process memory. `JOBS` survives
+only as a worker's scratchpad for the one job it is running, persisted to
+`runtime_state` on every stage change; no route reads it. `app.worker()` has
+exactly one caller, `worker.py`.
+
+### Known limitation, deliberately out of scope
+
+**Batch research still runs in-process** through `app.BATCHES` and its own
+threads, and is still lost on restart. Moving it onto the queue is separate work
+and was not started.
+
+### Tests
+
+`test_durable_queue.py`: 66 checks. The race and the lease run against a REAL
+Postgres, creating a uniquely named throwaway table and dropping it. Proven:
+two workers claim one job exactly once, the ceiling holds a job queued rather
+than failing it, an expired lease is reclaimed with attempts preserved, a stale
+worker's write matches no row while the owner's succeeds, and the third expiry
+fails the job honestly. Engine 747 checks across 15 suites, CRM 424, zero
+failures.
 
 ---
 
@@ -2151,8 +2229,9 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Competitor and channel discovery are now GenAI plus Tavily, with code as
-guardrails only.** The three deterministic engines are deleted; see the
+**Research execution is durable: a Neon-backed queue with two leased workers.**
+Before that, competitor and channel discovery became GenAI plus Tavily with code
+as guardrails only. The three deterministic engines are deleted; see the
 architecture section above. Before that, the synthesis payload budget closed the
 P0 that AMADA exposed. Before it,
 the redefinition work was complete and audited. None of it is deployed. The
@@ -2252,10 +2331,10 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-Discovery is now GenAI plus Tavily with code as guardrails only, tested against
-stored AMADA and Torus fixtures. Committed and pushed, NOT deployed, and no paid
-model call has exercised the new prompts. The engine needs a manual Render
-deploy, and everything since `55f6ffe` goes out together.
+P0-A is built and tested, including a real two-worker race against Postgres. Not
+deployed, no paid model call, no AMADA retry. P0-B, moving the evidence cache
+into Neon, is designed but NOT started. Deploy order matters: CRM first for the
+migration, then the engine web service, then the new worker service.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both

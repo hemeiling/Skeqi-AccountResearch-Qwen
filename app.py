@@ -34,6 +34,7 @@ import batch_service as bs
 import confidence as conf
 import language_view as lv
 import pdf_service as ps
+import job_store as js
 import research_service as rs
 
 HERE = Path(__file__).resolve().parent
@@ -49,20 +50,129 @@ app = Flask(__name__)
 # APP_ACCESS_PASSWORD are set, so local development is unchanged.
 access.install(app, rs.load_config)
 
+# A WORKER's scratchpad for the one job it is running: the pipeline mutates this
+# dictionary as it goes, and update() persists it to Neon under the fencing
+# token. It is never authoritative. The web service never populates it, and no
+# route reads it - job status comes from the database.
 JOBS = {}
 JOBS_LOCK = threading.Lock()
+
+
+def company_key(name):
+    """The identity key the duplicate index is built on. Deliberately the same
+    normalisation the CRM uses, so one live job per company means the same thing
+    on both sides of the callback."""
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (name or "").lower())
 
 
 def slugify(text, limit=40):
     return re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")[:limit] or "company"
 
 
+# The lease a worker process holds for the job it is running, if any. The web
+# process never has one: it enqueues and reads, and owns no research.
+LEASES = {}
+
+
+def adopt(lease):
+    """A worker has claimed a job. Rebuild the in-process view of it from the
+    durable payload, and remember the lease so every write can be fenced."""
+    payload = lease.payload or {}
+    models = payload.get("models") or [lease.model]
+    with JOBS_LOCK:
+        LEASES[lease.job_id] = lease
+        JOBS[lease.job_id] = {
+            "status": "running", "phase": "retrieval", "message": "",
+            "company": lease.company, "website": lease.website or "",
+            "stages": [], "search_queries": [], "sources": [],
+            "evidence_cached": False, "retrieval_timings": {},
+            "financial_sources": {}, "apollo_usage": {}, "quality": {},
+            "callback_url": payload.get("callback_url") or "",
+            "models": {m: {"model": m, "label": rs.MODEL_LABELS.get(m, m),
+                           "status": "pending", "elapsed": None, "result": None,
+                           "error": None, "token_usage": None, "started_at": None}
+                       for m in models},
+            "model_order": models,
+        }
+
+
+def release(job_id):
+    with JOBS_LOCK:
+        LEASES.pop(job_id, None)
+        JOBS.pop(job_id, None)
+
+
+def abandon(job_id):
+    """The heartbeat thread discovered the lease is gone. Mark the lease lost so
+    the next fenced write raises rather than continuing into a job we no longer
+    own."""
+    with JOBS_LOCK:
+        lease = LEASES.get(job_id)
+    if lease is not None:
+        lease.lost = True
+
+
+def runtime_state(job_id):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        return json.loads(json.dumps(job)) if job else {}
+
+
 def update(job_id, mutate):
+    """Mutate the in-process view, then persist it under the fencing token.
+
+    The row in Neon is the source of truth, so every worker-owned write goes
+    through here and every one of them is conditional on still owning the claim.
+    A write that matches no row raises OwnershipLost, which stops the run.
+    """
     with JOBS_LOCK:
         job = JOBS.get(job_id)
         if job:
             mutate(job)
             job["updated_at"] = time.time()
+        lease = LEASES.get(job_id)
+        snapshot = json.loads(json.dumps(job)) if job else None
+    if lease is None or snapshot is None:
+        return
+    if lease.lost:
+        raise js.OwnershipLost("lease for {} was already lost".format(job_id))
+    status = snapshot.get("status")
+    if status in ("done", "error", "needs_review", "synthesis_failed"):
+        return                          # the terminal write is made explicitly
+    lease.save_state(snapshot, stage=snapshot.get("phase"),
+                     pct=snapshot.get("progress_percent"))
+
+
+# The engine's own vocabulary for a finished run, mapped to the durable states
+# the CRM renders. `error` is the pipeline saying it could not continue at all.
+_TERMINAL_STATUS = {
+    "done": "completed",
+    "synthesis_failed": "synthesis_failed",
+    "needs_review": "failed",
+    "error": "failed",
+}
+
+
+def finish(job_id):
+    """Write the terminal state under the fencing token.
+
+    Called once, after the run has decided what happened. Separate from update()
+    because a terminal write clears the lease, and doing that on every progress
+    tick would let a slow worker end a job it no longer owns.
+    """
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        snapshot = json.loads(json.dumps(job)) if job else None
+        lease = LEASES.get(job_id)
+    if lease is None or snapshot is None:
+        return
+    status = _TERMINAL_STATUS.get(snapshot.get("status"))
+    if not status:
+        return
+    if status == "completed" and snapshot.get("outcome") == "completed_with_limitations":
+        status = "completed_with_limitations"
+    lease.finish(status, snapshot, error=snapshot.get("message") or None,
+                 stage=snapshot.get("phase"))
 
 
 def _last_payload(snapshot):
@@ -386,6 +496,14 @@ def notify_crm(job_id, payload):
     """
     with JOBS_LOCK:
         job = dict(JOBS.get(job_id) or {})
+        lease = LEASES.get(job_id)
+    # Ownership is re-checked immediately before the POST. A worker whose lease
+    # lapsed must not tell the CRM anything about a job another worker is now
+    # running - a stale "completed" would overwrite a live run's result.
+    if lease is not None:
+        if lease.lost or not lease.owns():
+            lease.lost = True
+            return False, "ownership lost; callback not sent"
     url = _callback_target(job)
     if not url:
         return False, "CRM_CALLBACK_URL is not set"
@@ -574,6 +692,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                                     payload=_last_payload(snap)),
                                 "error": "Synthesis failed after all fallbacks. "
                                          "Retrieval evidence preserved."})
+            finish(job_id)
             return
 
         limited = bool(quality.get("degraded") or quality.get("zero_grounding"))
@@ -612,6 +731,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             saved_any = saved_any or ok
             update(job_id, lambda j, ok=ok, d=detail:
                    j.update(crm_persisted=ok, crm_detail=d))
+        finish(job_id)
         if not saved_any and produced:
             # Say so loudly on the job: the run cost money and may not be stored.
             update(job_id, lambda j: j.update(
@@ -634,11 +754,13 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             wall_seconds=round(time.time() - t_wall, 1)))
         notify_crm(job_id, {"event": "failed",
                             "error": "Retrieval incomplete - nothing was generated."})
+        finish(job_id)
     except Exception as e:
         update(job_id, lambda j: j.update(status="error", phase="error",
                                           message=str(e)[:300],
                                           wall_seconds=round(time.time() - t_wall, 1)))
         notify_crm(job_id, {"event": "failed", "error": str(e)[:400]})
+        finish(job_id)
 
 
 @app.route("/")
@@ -724,40 +846,62 @@ def api_research():
     if choice != "all" and choice not in rs.ALL_MODELS:
         return jsonify({"error": "Unknown model: {}".format(choice)}), 400
 
+    # The API enqueues and returns. It never executes research: a run that lives
+    # in this process dies with this process, which is what put 24 of 46 jobs in
+    # the interrupted state. A worker claims it from Neon within seconds.
     job_id = uuid.uuid4().hex
-    with JOBS_LOCK:
-        JOBS[job_id] = {
-            "status": "running", "phase": "retrieval", "message": "",
-            "company": company, "website": website,
-            "stages": [], "search_queries": [], "sources": [],
-            "evidence_cached": False, "retrieval_timings": {},
-            "financial_sources": {}, "apollo_usage": {}, "quality": {},
-            "callback_url": callback_url,
-            "models": {m: {"model": m, "label": rs.MODEL_LABELS[m], "status": "pending",
-                           "elapsed": None, "result": None, "error": None,
-                           "token_usage": None, "started_at": None}
-                       for m in models},
-            "model_order": models,
-        }
-    threading.Thread(target=worker,
-                     args=(job_id, company, website, models, use_cache, force,
-                           known_contacts),
-                     daemon=True).start()
-    return jsonify({"job_id": job_id})
+    try:
+        js.JobStore().enqueue(
+            job_id, company_key(company), company, website,
+            models[0] if len(models) == 1 else "all",
+            {"company": company, "website": website, "models": models,
+             "use_cache": use_cache, "force": force,
+             "known_contacts": known_contacts, "callback_url": callback_url})
+    except Exception as e:
+        return jsonify({"error": "Could not queue the research job: {}".format(
+            type(e).__name__)}), 503
+    return jsonify({"job_id": job_id, "status": "queued"})
 
 
 @app.route("/api/job/<job_id>")
 def api_job(job_id):
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        snapshot = json.loads(json.dumps(job)) if job else None
-    if not snapshot:
+    """Job status comes from Neon, always.
+
+    The web service runs no research, so it has no job of its own to report on,
+    and consulting process memory here would reintroduce exactly the authority
+    that made a restart fatal. A worker keeps a live view while it runs and
+    persists it on every stage change; this reads that view.
+    """
+    try:
+        row = js.JobStore().read(job_id)
+    except Exception as e:
+        return jsonify({"error": "job state unavailable: {}".format(
+            type(e).__name__)}), 503
+    if not row:
         return jsonify({"error": "unknown job"}), 404
-    # Live elapsed for models still running.
-    now = time.time()
-    for m in snapshot["models"].values():
-        if m["status"] == "generating" and m["started_at"]:
-            m["elapsed"] = round(now - m["started_at"], 1)
+    snapshot = row.get("runtime_state") or {}
+    if not snapshot:
+        # Queued, or claimed a moment ago: no run has published a view yet.
+        payload = row.get("payload") or {}
+        models = [m for m in (payload.get("models") or [row.get("model")]) if m]
+        snapshot = {
+            "status": row["status"], "phase": row.get("stage") or "queued",
+            "message": row.get("error") or "", "company": row.get("company_name"),
+            "website": row.get("website") or "", "stages": [],
+            "search_queries": [], "sources": [], "evidence_cached": False,
+            "retrieval_timings": {}, "financial_sources": {},
+            "apollo_usage": {}, "quality": {},
+            "models": {m: {"model": m, "label": rs.MODEL_LABELS.get(m, m),
+                           "status": "pending", "elapsed": None, "result": None,
+                           "error": None, "token_usage": None, "started_at": None}
+                       for m in models},
+            "model_order": models,
+        }
+    # The row is the authority on status; the view is the authority on detail.
+    snapshot["status"] = row["status"]
+    snapshot["progress_percent"] = row.get("progress_percent")
+    if row.get("error") and not snapshot.get("message"):
+        snapshot["message"] = row["error"]
     return jsonify(snapshot)
 
 

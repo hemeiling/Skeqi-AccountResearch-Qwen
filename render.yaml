@@ -4,21 +4,27 @@
 # models, retrieval, Apollo, credentials, reports and storage. The CRM embeds it
 # in an iframe and shares nothing else with it.
 #
-# IMPORTANT — one worker only. Job and batch state lives in memory
-# (app.JOBS, app.BATCHES) and background threads own it, so a second worker
-# would answer polls for jobs it has never seen. Concurrency comes from threads.
+# Single-job research runs on the WORKER service, not here. The web service
+# enqueues into Neon and reads from it, so it owns no run and a deploy of it
+# cannot kill one. Batch runs still use in-process threads (app.BATCHES) and are
+# still lost on restart; moving them onto the queue is separate work.
 services:
   - type: web
     name: skeqi-account-research
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --workers 1 --threads 8 --timeout 600 --bind 0.0.0.0:$PORT app:app
+    # Two workers are safe now: no request depends on process memory. The
+    # timeout drops from 600s because no request is long-running any more -
+    # research happens in the worker service below.
+    startCommand: gunicorn --workers 2 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT app:app
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.6"
 
+      - key: DATABASE_URL      # enqueue and read; the web service runs no research
+        sync: false
       # ── Access gate ──────────────────────────────────────────────────────
       # Without BOTH of these the app is open to anyone with the URL.
       - key: APP_ACCESS_USERNAME
@@ -91,3 +97,49 @@ services:
         sync: false
       - key: AI_PRICE_CURRENCY
         sync: false
+
+  # Research execution. Two instances, one job each; that IS the concurrency
+  # model. A deploy of the web service above cannot touch a run in progress
+  # here, and if an instance dies its lease lapses and the other reclaims the
+  # job within 90 seconds.
+  - type: worker
+    name: skeqi-account-research-worker
+    env: python
+    plan: starter
+    numInstances: 2
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # The worker does the research, so it needs the full credential set.
+      - key: DATABASE_URL          # the same Neon database the CRM uses
+        sync: false
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: DASHSCOPE_BASE_URL
+        sync: false
+      - key: DASHSCOPE_WORKSPACE_ID
+        sync: false
+      - key: TAVILY_MCP_URL
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: CRM_CALLBACK_URL
+        sync: false
+      - key: APP_SERVICE_KEY       # presented to the CRM as X-AR-Service-Key
+        sync: false
+      - key: MAX_CONCURRENT_RESEARCH_JOBS
+        value: "2"
+      - key: RESEARCH_WORKER_SLOTS
+        value: "1"
+      - key: RESEARCH_LEASE_SECONDS
+        value: "90"
+      - key: RESEARCH_HEARTBEAT_SECONDS
+        value: "30"
+      - key: RESEARCH_MAX_ATTEMPTS
+        value: "3"
+      - key: RESEARCH_CLAIM_POLL_SECONDS
+        value: "5"
