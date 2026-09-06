@@ -1,0 +1,315 @@
+"""What the account SELLS, derived from retained evidence only.
+
+The distinction this module exists to hold:
+
+    technologies the account USES  ≠  products the account SELLS
+
+Ford's strongest retained evidence is "ABB Robotics recognized as a 2026 Ford
+Supplier of the Year" and "Ford uses co-bots". A naive noun sweep turns those
+into "robotics" and "collaborative robots" as FORD'S OFFERINGS, which would then
+send competitor discovery looking for robot makers - Ford's suppliers, not its
+rivals. ACRO's evidence is the mirror image: its own site titles ARE its
+offerings.
+
+So direction is the whole design. A capability counts as an offering only when
+the ACCOUNT is the subject of a selling verb, or the account's own site says so.
+When a vendor is the subject and the account is the object, the same words are
+recorded as USAGE and never reach the offering set.
+
+Deterministic: the same retained evidence yields the same profile. Every
+assertion carries the source it came from, so nothing here is ungrounded.
+
+No network, no model call. Import-safe.
+"""
+import re
+from collections import OrderedDict
+
+import research_service as rs
+
+DIRECT, DISTRIBUTOR_LED, REPRESENTATIVE_LED, MIXED, UNKNOWN = (
+    "DIRECT", "DISTRIBUTOR_LED", "REPRESENTATIVE_LED", "MIXED", "UNKNOWN")
+
+# Generic manufacturing vocabulary used only to NORMALISE extracted text into
+# comparable concepts. It never invents a capability the evidence did not state,
+# and it is deliberately industry-neutral - no battery, automotive or account
+# specific terms.
+_CAPABILITY_LEXICON = OrderedDict([
+    ("assembly", r"assembly|assembling|装配|组装"),
+    ("welding", r"weld(?:ing)?|焊接|焊装"),
+    ("laser processing", r"laser|激光"),
+    ("machining", r"machining|cnc|milling|turning|机加工|数控"),
+    ("stamping/forming", r"stamping|forming|press(?:ing)?|冲压"),
+    ("dispensing", r"dispens\w*|gluing|adhesive|点胶|涂胶"),
+    ("inspection/test", r"inspection|inspect\w*|testing|test stand|metrology|检测|测试"),
+    ("machine vision", r"machine vision|vision system|视觉"),
+    ("robotics", r"robot\w*|cobot\w*|机器人"),
+    ("material handling", r"material handling|conveyor|palleti\w*|输送|物料搬运"),
+    ("packaging", r"packaging|包装"),
+    ("controls/PLC", r"\bplc\b|motion control|control system|控制系统"),
+    ("MES/software", r"\bmes\b|manufacturing execution|traceability|追溯"),
+    ("tooling/fixtures", r"tooling|fixtur\w*|工装|夹具"),
+    ("turnkey systems", r"turnkey|integrated system|custom automat\w*|成套|集成系统"),
+])
+
+_INDUSTRY_LEXICON = OrderedDict([
+    ("automotive", r"automotive|vehicle|汽车"),
+    ("medical device", r"medical device|medical|医疗"),
+    ("aerospace", r"aerospace|aviation|航空"),
+    ("electronics", r"electronic\w*|semiconductor|电子|半导体"),
+    ("appliance", r"appliance|白色家电|家电"),
+    ("energy/battery", r"batter\w*|energy storage|电池|储能"),
+    ("consumer goods", r"consumer goods|packaging goods|日用品"),
+    ("industrial equipment", r"industrial equipment|machinery|工业设备"),
+])
+
+# The account is the SUBJECT: these describe what it sells.
+_SELLS = (r"design(?:s|ed|ing)?|build(?:s|ing)?|manufactur\w*|produc(?:e|es|ed|ing)|"
+          r"provid(?:e|es|ed|ing)|offer(?:s|ed|ing)?|suppl(?:y|ies|ied|ying)|"
+          r"deliver(?:s|ed|ing)?|specialis\w*|specializ\w*|integrat(?:e|es|ing)")
+# The account is the OBJECT: these describe what it BUYS or uses.
+_USES = (r"uses?|using|used|deploy\w*|install\w*|operat\w*|adopt\w*|"
+         r"supplier of the year|supplier to|supplies to|awarded by")
+
+_GTM_CUES = {
+    # "Custom Automated Equipment" as a PRODUCT LINE is a positive statement that
+    # the company sells engineered-to-order, which is a direct-sales model. It is
+    # evidence of what they do, not an inference from what is missing - the words
+    # are on the page. Up to two words may sit between, because real product
+    # names read "Custom Automated Assembly Systems".
+    DIRECT: (r"request a quote|contact (?:our|the) sales|engineered[- ]to[- ]order|"
+             r"custom\w*(?:\s+\w+){0,2}\s+(?:solution|system|equipment|machine|line|cell)s?|"
+             r"direct sales|our engineers work|project[- ]based|定制|直销|工程项目"),
+    DISTRIBUTOR_LED: (r"authoriz(?:ed|sed) distributor|find a distributor|distributor "
+                      r"network|dealer locator|our distributors|经销商|分销商|代理商"),
+    REPRESENTATIVE_LED: (r"manufacturers'? representative|sales representative network|"
+                         r"rep(?:resentative)? network|our reps\b|代表处"),
+}
+
+_STOP_TITLE = re.compile(
+    r"^(home|about|about us|contact|contact us|products?|services?|news|careers|"
+    r"privacy|terms|sitemap|blog|login)$", re.I)
+
+
+def _clean_title(title):
+    """A page title minus the site furniture, so it can be read as an offering."""
+    t = re.sub(r"\s*[|\-–—]\s*[^|\-–—]*$", "", (title or "").strip())
+    t = re.sub(r"\s*\(.*?\)\s*", " ", t)
+    return re.sub(r"\s+", " ", t).strip(" .-|")
+
+
+def _own_site(item, domain):
+    d = (item.get("domain") or "") or rs.registrable_domain(item.get("url") or "")
+    return bool(item.get("official")) or (
+        bool(domain) and rs.registrable_domain("https://" + domain) == rs.registrable_domain("https://" + d))
+
+
+def _sentences(text):
+    return re.split(r"(?<=[.!?。！？])\s+|\n+", text or "")
+
+
+def _match_lexicon(lex, text):
+    return [k for k, pat in lex.items() if re.search(pat, text or "", re.I)]
+
+
+def build_profile(evidence, name, domain="", aliases=()):
+    """Deterministic profile from retained evidence. Nothing is inferred from
+    absence, and every field records the sources that produced it."""
+    ev = list(evidence or [])
+    names = [n for n in [name, rs.core_name(name)] + list(aliases or []) if n]
+    tokens = [t for t in rs.distinctive_tokens(name) if len(t) >= 3]
+
+    def mentions_account(s):
+        return any((rs._mentions(n, s) if n.isascii() else n in s) for n in names) \
+            or any(rs._mentions(t, s) for t in tokens)
+
+    offerings, capabilities, industries, geography = OrderedDict(), OrderedDict(), OrderedDict(), OrderedDict()
+    usage = OrderedDict()                     # what the account USES - kept apart
+    gtm_hits = {k: [] for k in _GTM_CUES}
+    own_pages = 0
+
+    for item in ev:
+        url = item.get("url") or ""
+        text = item.get("text") or ""
+        title = _clean_title(item.get("title"))
+        own = _own_site(item, domain)
+        if own:
+            own_pages += 1
+            # The account's own page title names what it sells - the single most
+            # reliable offering signal available, and the reason ACRO profiles
+            # cleanly while Ford (whose site is blocked) does not.
+            if title and not _STOP_TITLE.match(title) and not mentions_account(title):
+                offerings.setdefault(title.lower(), []).append(url)
+            elif title and not _STOP_TITLE.match(title):
+                stripped = title
+                for n in sorted(names, key=len, reverse=True):
+                    stripped = re.sub(re.escape(n), " ", stripped, flags=re.I)
+                stripped = re.sub(r"\s+", " ", stripped).strip(" ,.-|")
+                if stripped and not _STOP_TITLE.match(stripped):
+                    offerings.setdefault(stripped.lower(), []).append(url)
+            for k in _match_lexicon(_CAPABILITY_LEXICON, title + " " + text[:4000]):
+                capabilities.setdefault(k, []).append(url)
+            for k in _match_lexicon(_INDUSTRY_LEXICON, text[:8000]):
+                industries.setdefault(k, []).append(url)
+
+        for s in _sentences(text[:20000]):
+            s = " ".join(s.split())
+            if len(s) < 25 or len(s) > 320 or not mentions_account(s):
+                continue
+            sells = re.search(r"(?:%s)\s+(?:%s)" % ("|".join(re.escape(n) for n in names[:2]),
+                                                    _SELLS), s, re.I) \
+                or re.search(r"(?:%s)\b[^.]{0,40}\b(?:%s)" % ("|".join(tokens), _SELLS), s, re.I)
+            uses = re.search(_USES, s, re.I)
+            caps = _match_lexicon(_CAPABILITY_LEXICON, s)
+            if sells and not uses:
+                for k in caps:
+                    capabilities.setdefault(k, []).append(url)
+                for k in _match_lexicon(_INDUSTRY_LEXICON, s):
+                    industries.setdefault(k, []).append(url)
+            elif uses:
+                # Same words, opposite direction. Recorded, never promoted.
+                for k in caps:
+                    usage.setdefault(k, []).append(url)
+        for m in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),\s*(?:[A-Z]{2}\b|USA|United States)", text[:6000]):
+            if own:
+                geography.setdefault(m.group(1), []).append(url)
+        for model, pat in _GTM_CUES.items():
+            # Title as well as body: a company's product line is usually its page
+            # title, and that is where "Custom Automated Equipment" lives.
+            if own and re.search(pat, (title + " " + text[:20000]), re.I):
+                gtm_hits[model].append(url)
+
+    # Capabilities the account only USES are never offerings.
+    for k in list(capabilities):
+        if k in usage and len(usage[k]) > len(capabilities[k]):
+            capabilities.pop(k)
+
+    business_model, bm_ev = _business_model(offerings, capabilities, usage, own_pages)
+    gtm, gtm_ev = _go_to_market(gtm_hits)
+
+    prof = {
+        "account": name,
+        "offerings": list(offerings),
+        "capabilities": list(capabilities),
+        "industries": list(industries),
+        "project_types": _project_types(offerings, capabilities),
+        "geography": list(geography),
+        "business_model": business_model,
+        "go_to_market_model": gtm,
+        "uses_not_sells": list(usage),
+        "supporting_evidence": {
+            "offerings": {k: sorted(set(v)) for k, v in offerings.items()},
+            "capabilities": {k: sorted(set(v)) for k, v in capabilities.items()},
+            "industries": {k: sorted(set(v)) for k, v in industries.items()},
+            "geography": {k: sorted(set(v)) for k, v in geography.items()},
+            "business_model": bm_ev,
+            "go_to_market_model": gtm_ev,
+            "usage": {k: sorted(set(v)) for k, v in usage.items()},
+        },
+        "own_site_pages": own_pages,
+        "evidence_count": len(ev),
+    }
+    prof["confidence"] = _confidence(prof)
+    prof.update(_readiness(prof))
+    return prof
+
+
+def _project_types(offerings, capabilities):
+    out = []
+    joined = " ".join(list(offerings) + list(capabilities)).lower()
+    for label, pat in (("custom/engineered systems", r"custom|engineered|turnkey|integrated"),
+                       ("standard equipment", r"standard|catalog|off[- ]the[- ]shelf"),
+                       ("services", r"service|maintenance|support|retrofit")):
+        if re.search(pat, joined):
+            out.append(label)
+    return out
+
+
+def _business_model(offerings, capabilities, usage, own_pages):
+    """Integrator/equipment supplier versus manufacturer/OEM, from direction.
+
+    An account whose OWN pages advertise process capabilities sells those
+    capabilities. An account that mostly appears as the RECIPIENT of process
+    capability buys it - it is the manufacturer, not the supplier.
+    """
+    ev = []
+    if own_pages and capabilities and len(capabilities) >= 2:
+        ev.append("own-site pages advertise %d process capabilities" % len(capabilities))
+        return "equipment_supplier_or_integrator", ev
+    if usage and len(usage) > len(capabilities):
+        ev.append("appears as the recipient of %d capabilities it does not advertise" % len(usage))
+        return "manufacturer_or_oem", ev
+    if offerings:
+        ev.append("offerings named without process-capability evidence")
+        return "unclassified_seller", ev
+    ev.append("insufficient evidence")
+    return "unknown", ev
+
+
+def _go_to_market(hits):
+    """Constrained taxonomy. DIRECT is a POSITIVE finding, never the residue of
+    finding no distributor - that would turn every blocked website into a
+    direct-sales business."""
+    present = [m for m, urls in hits.items() if urls]
+    ev = {m: sorted(set(u)) for m, u in hits.items() if u}
+    if len(present) > 1:
+        return MIXED, ev
+    if present:
+        return present[0], ev
+    return UNKNOWN, ev
+
+
+def _score(n, strong=3):
+    if n >= strong:
+        return "high"
+    if n >= 1:
+        return "medium" if n >= 2 else "low"
+    return "none"
+
+
+def _confidence(p):
+    """Field-level, because one opaque number cannot say WHICH part is weak, and
+    the two discovery paths need different parts."""
+    return {
+        "offerings": _score(len(p["offerings"])),
+        "capabilities": _score(len(p["capabilities"])),
+        "industries": _score(len(p["industries"])),
+        "geography": _score(len(p["geography"]), strong=2),
+        "business_model": ("high" if p["business_model"] not in ("unknown", "unclassified_seller")
+                           else "low" if p["business_model"] == "unclassified_seller" else "none"),
+        "go_to_market": ("high" if p["go_to_market_model"] not in (UNKNOWN, MIXED)
+                         else "medium" if p["go_to_market_model"] == MIXED else "none"),
+    }
+
+
+_OK = ("medium", "high")
+
+
+def _readiness(p):
+    """Different paths need different fields, so they are judged separately.
+
+    Competitor discovery needs to know what the account SELLS and to whom;
+    without that it would search on industry alone and return the same large
+    vendors for every account. Channel discovery needs the go-to-market model,
+    because that decides whether a channel can exist at all.
+    """
+    c = p["confidence"]
+    comp_missing = []
+    if c["capabilities"] not in _OK:
+        comp_missing.append("capabilities")
+    if c["industries"] not in _OK and c["offerings"] not in _OK:
+        comp_missing.append("industries_or_offerings")
+    if c["business_model"] == "none":
+        comp_missing.append("business_model")
+
+    chan_missing = []
+    if c["go_to_market"] == "none":
+        chan_missing.append("go_to_market_model")
+
+    return {
+        "competitor_discovery_ready": not comp_missing,
+        "competitor_skip_reason": (None if not comp_missing
+                                   else "insufficient profile evidence: " + ", ".join(comp_missing)),
+        "channel_discovery_ready": not chan_missing,
+        "channel_skip_reason": (None if not chan_missing
+                                else "insufficient profile evidence: " + ", ".join(chan_missing)),
+    }
