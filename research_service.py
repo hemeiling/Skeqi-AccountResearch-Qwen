@@ -25,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import channel_discovery as chdisc
 import competitor_discovery as cdisc
 import offering_profile as op
 import tavily_service as tv
@@ -1817,6 +1818,116 @@ def competitor_verifier(profile, name, name_cn, aliases, sink):
     return verify
 
 
+def channel_verifier(profile, name, name_cn, aliases, sink):
+    """The gate a channel candidate must pass.
+
+    Mirror image of the competitor gate. There, the page is about the candidate
+    and need not mention the account. Here it MUST: a distributor page exists to
+    say whose products it carries, so a page that never names the account cannot
+    be evidence of representation.
+
+    Representation must be STATED. Integrating an account's equipment, partnering
+    with it or servicing it are real relationships, and they are recorded as such,
+    but they are not representation and must never be promoted into it.
+    """
+    def verify(candidates, intent_key):
+        out = {"verified": 0, "channel_entities": 0, "authorized": 0, "partners": 0,
+               "rejected_no_representation": 0, "fetched": 0, "evidence": []}
+        if not candidates:
+            return out
+
+        def grab(c):
+            try:
+                text, method = fetch_page_text(c["url"])
+            except Exception:
+                text, method = "", "error"
+            return dict(c, text=text or "", method=method)
+
+        fetched = [f for f in parallel_map(grab, candidates, FETCH_CONCURRENCY,
+                                           deadline=EVIDENCE_STAGE_DEADLINE,
+                                           fallback=None) if f]
+        for f in fetched:
+            body = f["text"]
+            if not body or not _plausible_host(f["url"]):
+                continue
+            out["fetched"] += 1
+            org = _candidate_org_name(f["url"], f.get("title") or "", body)
+            if not org:
+                continue                       # cannot name it -> cannot list it
+            # The account's own site listing its own distributors is fine, but the
+            # account is not its own channel.
+            if _mentions(name, org) or (name_cn and name_cn in org) \
+                    or any(a and _mentions(a, org) for a in (aliases or [])):
+                continue
+            out["verified"] += 1
+            role, authorized, territory, quote = chdisc.classify_role(
+                body, name, name_cn, aliases)
+            if role == chdisc.NOT_A_CHANNEL:
+                out["rejected_no_representation"] += 1
+                continue
+            is_channel = role in chdisc.CHANNEL_ROLES
+            if is_channel:
+                out["channel_entities"] += 1
+                if authorized:
+                    out["authorized"] += 1
+            else:
+                out["partners"] += 1
+            row = {
+                "organization_name": org,
+                "organization_key": normalize_org_key(org),
+                "role": role,
+                "is_representation": is_channel,
+                "authorized": bool(authorized),
+                "territory": territory,
+                "evidence_quote": quote,
+                "source_urls": [f["url"]],
+                "source_domains": [registrable_domain(f["url"])],
+                # A distributor sits in the account's ecosystem. Provenance stays
+                # its own dimension and never doubles as the role.
+                "provenance": PROV_ECOSYSTEM,
+                "confidence": ("high" if authorized and is_channel
+                               else "medium" if is_channel else "low"),
+                "discovered_by": "tavily",
+                "intent": intent_key,
+            }
+            _merge_channel(sink, row)
+            out["evidence"].append({
+                "url": f["url"], "title": f.get("title") or org,
+                "domain": registrable_domain(f["url"]),
+                "text": body, "tier": 5, "source_type": "channel-page",
+                "official": False, "hits": 1, "topics": [intent_key],
+                "provenance": PROV_ECOSYSTEM, "content_verified": True,
+                "discovered_by": "tavily", "channel": org,
+            })
+        return out
+    return verify
+
+
+# Representation outranks partnership: if one page says a company distributes for
+# the account and another only calls it a partner, it is a distributor.
+_ROLE_RANK = {chdisc.SERVICE_PARTNER: 0, chdisc.TECHNOLOGY_PARTNER: 1,
+              chdisc.SYSTEM_INTEGRATOR: 2, chdisc.RESELLER: 3,
+              chdisc.REPRESENTATIVE: 4, chdisc.DISTRIBUTOR: 5,
+              chdisc.AUTHORIZED_DISTRIBUTOR: 6}
+
+
+def _merge_channel(sink, row):
+    for existing in sink:
+        if existing["organization_key"] != row["organization_key"]:
+            continue
+        for k in ("source_urls", "source_domains"):
+            existing[k] = sorted(set(existing[k]) | set(row[k]))
+        if _ROLE_RANK.get(row["role"], -1) > _ROLE_RANK.get(existing["role"], -1):
+            for k in ("role", "is_representation", "authorized", "territory",
+                      "evidence_quote", "confidence"):
+                existing[k] = row[k]
+        else:
+            existing["territory"] = existing.get("territory") or row.get("territory")
+            existing["authorized"] = existing["authorized"] or row["authorized"]
+        return
+    sink.append(row)
+
+
 def normalize_org_key(org):
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (org or "").lower())
 
@@ -2433,7 +2544,7 @@ twice and do not translate loosely. Under every heading use exactly:
 Keep company, product, brand and award names in their official original language in BOTH blocks
 (e.g. 宁德时代, CATL, 琦航数字工厂系统). Be concise: bullets, not essays.
 
-Use exactly these 19 headings in this order for {company}{site}:
+Use exactly these 20 headings in this order for {company}{site}:
 
 ## Executive Summary / 执行摘要
 Write this LAST but place it FIRST. What the company does; why it matters to SKEQI; the top 3-5
@@ -2483,6 +2594,25 @@ new-product introduction. Only what the evidence supports.
 logistics or digital-factory needs SKEQI could address, and 3-5 specific discovery questions.
 Do not turn this into an incumbency analysis; that lives in Existing Automation Providers.
 Keep confidence honest; never invent a competitor or a relationship.
+
+## Distributors & Channel Partners / 分销与渠道伙伴
+How THIS ACCOUNT reaches its own customers, and who sells on its behalf. This is the account's
+outbound channel, not its supply chain: its equipment suppliers and technology vendors belong in
+Existing Automation Providers.
+1. GO-TO-MARKET MODEL first, taken from the GO-TO-MARKET AND VERIFIED CHANNEL block, with its
+confidence. If confidence is low or medium, say the model is indicative rather than established.
+Never state that the account sells only direct because no distributor was found: absence of
+evidence is not evidence of absence, and say which of the two this is.
+2. VERIFIED CHANNEL. Use ONLY the organisations in that block. For each: role
+(AUTHORIZED_DISTRIBUTOR / DISTRIBUTOR / REPRESENTATIVE / RESELLER), territory, what the source
+actually states, evidence [n], confidence. If there are none, state verbatim
+"No verified distributors, representatives or resellers were identified for this account." and "未发现可验证的分销商、代理商或经销商。"
+3. RELATED BUT NOT CHANNEL. Integrators, technology partners and service partners named in that
+block are listed separately as partners. Representing an account and integrating its equipment are
+different relationships; never promote one into the other.
+4. WHAT IT MEANS FOR SKEQI. Who the account sells through, therefore who influences its equipment
+and capacity decisions, and whether SKEQI would meet a channel partner in the buying process.
+Keep confidence honest; never invent a distributor.
 
 ## Existing Automation Providers / 现有自动化供应商
 Reconstruct the automation, equipment and manufacturing-technology ecosystem behind THIS account's
@@ -2765,7 +2895,7 @@ A short honest report is the correct output here. Do not pad it.
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
                apollo_people=None, on_section=None, providers=None, aliases=(),
-               competitors=None, profile=None):
+               competitors=None, profile=None, channels=None):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -2792,6 +2922,7 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     import provider_view as pv
     prompt += pv.provider_prompt_block(providers, company)
     prompt += pv.competitor_prompt_block(competitors, profile)
+    prompt += pv.channel_prompt_block(channels, profile)
     content = [{"text": prompt}] if is_multi else prompt
     params = {} if is_multi else {"result_format": "message"}
     started = time.time()
@@ -2882,7 +3013,7 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
 def synthesize_with_fallback(model, company, website, evidence, cfg,
                              timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None,
                              on_section=None, providers=None, aliases=(),
-                             competitors=None, profile=None):
+                             competitors=None, profile=None, channels=None):
     """Synthesise with the requested model, falling back on access denial.
 
     An unusable model must not become an empty report: the user asked for
@@ -2901,7 +3032,8 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
                          apollo_people=apollo_people, on_section=on_section,
                          providers=providers, aliases=aliases,
-                         competitors=competitors, profile=profile)
+                         competitors=competitors, profile=profile,
+                         channels=channels)
         attempts.append({"model": candidate, "kind": "synthesis",
                          "status": run.get("status"),
                          "input_tokens": run.get("input_tokens") or 0,
@@ -3520,6 +3652,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
 
     # ---- target-competitor discovery, gated on that profile ----
     competitors = []
+    comp_evidence = []
     comp_cov = cdisc.empty_coverage()
     comp_cov["profile_confidence"] = profile.get("confidence")
     if client is not None:
@@ -3540,6 +3673,33 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     elif not competitors:
         limitation("competitors", "No sufficiently verified target-account "
                                   "competitors were identified")
+
+    # ---- channel discovery: who distributes or represents the account ----
+    # Runs unless the account's go-to-market is STRONGLY corroborated as direct.
+    # A sales team is not that corroboration, so "we found no channel" is only
+    # ever said after looking.
+    channels = []
+    chan_cov = chdisc.empty_coverage()
+    chan_cov["go_to_market_model"] = profile.get("go_to_market_model")
+    chan_cov["go_to_market_confidence"] = profile.get("go_to_market_confidence")
+    if client is not None:
+        t = time.time()
+        hverify = channel_verifier(profile, name, name_cn, aliases, channels)
+        chan_evidence, chan_cov = chdisc.discover(client, profile, name, hverify,
+                                                  name_cn=name_cn, progress=progress)
+        timings["channel_discovery"] = round(time.time() - t, 1)
+        if chan_evidence:
+            evidence, dropped = apply_evidence_caps(
+                site_evidence,
+                web_evidence + tavily_evidence + comp_evidence + chan_evidence)
+    else:
+        chan_cov["skip_reason"] = "retrieval provider unavailable"
+    if not channels and chan_cov.get("skip_reason"):
+        limitation("channel", "Channel discovery skipped - {}"
+                              .format(chan_cov["skip_reason"]))
+    elif not any(c["is_representation"] for c in channels):
+        limitation("channel", "No verified distributors, representatives or "
+                              "resellers were identified")
 
     if client is not None:
         try:
@@ -3738,6 +3898,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         "supplied_website": supplied_domain, "aliases": aliases,
         "providers": providers, "competitors": competitors,
         "profile": profile, "competitor_coverage": comp_cov,
+        "channels": channels, "channel_coverage": chan_cov,
         "tavily_provider": tavily_cov, "tavily_general": general_cov,
         "website_replaced": bool(resolved.get("replaced_supplied")),
         "website_status": website_status, "limited_evidence": len(evidence) < 5,

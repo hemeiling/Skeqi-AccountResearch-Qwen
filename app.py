@@ -114,6 +114,40 @@ def execution_facts(package, attempts=None, successful_model=None):
         "competitor_discovery": _competitor_facts(pkg.get("competitor_coverage"),
                                                   pkg.get("competitors"),
                                                   pkg.get("profile")),
+        "channel_discovery": _channel_facts(pkg.get("channel_coverage"),
+                                            pkg.get("channels"),
+                                            pkg.get("profile")),
+    }
+
+
+def _channel_facts(cov, channels, profile):
+    """Distributor and representative discovery.
+
+    channel_entities counts REPRESENTATION only. Partners are counted apart,
+    because the whole point of the role model is that an integrator or a
+    technology partner is not a distributor.
+    """
+    cov = cov or {}
+    rows = list(channels or [])
+    reps = [c for c in rows if c.get("is_representation")]
+    searches = int(cov.get("search_count") or 0)
+    prof = profile or {}
+    return {
+        "used": bool(cov.get("used")) and searches > 0,
+        "searches": searches,
+        "batches": int(cov.get("batches") or 0),
+        "candidates": int(cov.get("candidates") or 0),
+        "verified_organizations": int(cov.get("verified") or 0),
+        "channel_entities": len(reps),
+        "authorized": sum(1 for c in reps if c.get("authorized")),
+        "partners": len(rows) - len(reps),
+        "rejected_no_representation": int(cov.get("rejected_no_representation") or 0),
+        "distinct_domains": int(cov.get("distinct_domains") or 0),
+        "go_to_market_model": prof.get("go_to_market_model")
+                              or cov.get("go_to_market_model"),
+        "go_to_market_confidence": prof.get("go_to_market_confidence")
+                                   or cov.get("go_to_market_confidence"),
+        "skip_reason": cov.get("skip_reason"),
     }
 
 
@@ -412,6 +446,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                     aliases=package.get("aliases") or [],
                     competitors=package.get("competitors") or [],
                     profile=package.get("profile") or {},
+                    channels=package.get("channels") or [],
                     apollo_people=(package.get("apollo") or {}).get("people"),
                     progress=lambda m: progress("model", m),
                     # Live output, part two: sections reach the CRM as they are

@@ -130,6 +130,75 @@ def competitor_prompt_block(competitors, profile=None):
     return "\n".join(lines) + "\n"
 
 
+NO_CHANNEL_EN = ("No verified distributors, representatives or resellers were "
+                 "identified for this account.")
+NO_CHANNEL_ZH = "未发现可验证的分销商、代理商或经销商。"
+NO_CHANNEL = "{}\n{}".format(NO_CHANNEL_EN, NO_CHANNEL_ZH)
+
+_GTM_LABEL = {
+    "DIRECT": "Direct sales / 直销",
+    "DISTRIBUTOR_LED": "Distributor-led / 经销商主导",
+    "REPRESENTATIVE_LED": "Representative-led / 代表处主导",
+    "MIXED": "Mixed direct and channel / 直销与渠道并行",
+    "UNKNOWN": "Not established from the evidence / 现有证据未能确认",
+}
+
+
+def channel_prompt_block(channels, profile=None):
+    """Go-to-market and verified channel entities as FACTS.
+
+    The confidence travels with the model on purpose. "Direct" asserted from one
+    sales-team mention is a different claim from "direct" asserted from an
+    explicit statement, and the report must not present them identically.
+    """
+    prof = profile or {}
+    model = prof.get("go_to_market_model") or "UNKNOWN"
+    conf = prof.get("go_to_market_confidence") or "none"
+    rows = [c for c in (channels or []) if c.get("organization_name")]
+    reps = [c for c in rows if c.get("is_representation")]
+    partners = [c for c in rows if not c.get("is_representation")]
+
+    lines = ["\n\n---\n\nGO-TO-MARKET AND VERIFIED CHANNEL / 销售模式与已核实渠道",
+             "Go-to-market model: {} (confidence: {})".format(
+                 _GTM_LABEL.get(model, model), conf)]
+    if conf in ("low", "medium", "none"):
+        lines.append("This model is NOT firmly established. Say so; do not present "
+                     "it as settled, and do not state that the account has no "
+                     "channel merely because none was found.")
+    if not reps:
+        lines += ["Verified distributors, representatives or resellers: None.",
+                  NO_CHANNEL,
+                  "State the sentence above verbatim. Do NOT name distributors "
+                  "from general knowledge, and do NOT present a supplier, "
+                  "customer, integrator or technology partner as a distributor."]
+        why = prof.get("channel_skip_reason")
+        if why:
+            lines.append("Reason: " + why)
+    else:
+        lines.append("Verified channel entities. Each was verified as a real "
+                     "organisation AND found stating that it represents this "
+                     "account. Only these may be listed as channel:")
+        for c in reps:
+            lines.append(
+                "- Organization: {}\n  Role: {}{}\n  Territory: {}\n"
+                "  Stated: \"{}\"\n  Evidence: {}\n  Confidence: {}".format(
+                    c["organization_name"], c["role"],
+                    " (authorized)" if c.get("authorized") else "",
+                    c.get("territory") or "not stated",
+                    (c.get("evidence_quote") or "")[:200],
+                    ", ".join(c.get("source_domains") or []) or "-",
+                    c.get("confidence") or "-"))
+    if partners:
+        lines.append("Related organisations that are NOT channel. They integrate, "
+                     "partner with or service this account, which is not "
+                     "representation. List them as partners, never as distributors:")
+        for c in partners:
+            lines.append("- {} | {} | {}".format(
+                c["organization_name"], c["role"],
+                ", ".join(c.get("source_domains") or []) or "-"))
+    return "\n".join(lines) + "\n"
+
+
 # --------------------------------------------------------------------------
 # Output correction
 # --------------------------------------------------------------------------

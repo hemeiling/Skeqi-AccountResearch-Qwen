@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: Competitor Analysis redefinition — Commits 1-3.5 done, Commit 4 not started
+> Current phase: Competitor Analysis redefinition — all four commits done, awaiting review
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -794,7 +794,7 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 
 ---
 
-## Competitor Analysis redefinition (2026-09-06) — Commits 1-3.5 IMPLEMENTED, NOT DEPLOYED
+## Competitor Analysis redefinition (2026-09-06) — Commits 1-4 IMPLEMENTED, NOT DEPLOYED
 
 **What changed conceptually.** "Competitor Analysis" used to mean *who competes
 with SKEQI for this account's opportunities*. It now means *who competes with the
@@ -808,7 +808,9 @@ difficulty and COMPETE/REPLACE/COMPLEMENT/INTEGRATE.
 | `a1790f6` | `offering_profile.py` — what the account SELLS vs what it USES, plus go-to-market |
 | `0e191ff` | Go-to-market correction: DIRECT needs positive selling evidence, never absence |
 | `b681243` | `competitor_discovery.py` — ranked concepts, three independent overlap dimensions |
-| (this)   | Commit 3.5 — pipeline integration, synthesis representation, manifest |
+| `6259ab9` | Commit 3.5 — pipeline integration, synthesis representation, manifest |
+| `168c92a` | Go-to-market confidence gating (the correction Commit 4 depended on) |
+| (this)   | Commit 4 — `channel_discovery.py`, distributor/representative discovery |
 
 ### The production flow after Commit 3.5
 
@@ -891,12 +893,83 @@ Commit 2 rule is satisfied, but it is thin, and a verified-DIRECT profile makes
 for ACRO on one phrase. Decide whether DIRECT needs corroboration (two cues, or a
 cue plus no channel language) before channel discovery is gated on it.
 
+### Go-to-market confidence (the correction before Commit 4)
+
+A single supporting cue set DIRECT and switched channel discovery off. Cues are
+now named and graded. An EXPLICIT signal states how the company goes to market;
+a SUPPORTING signal says only that it can sell direct, which every
+distributor-led manufacturer also can.
+
+| Evidence | Confidence | Channel discovery |
+|---|---|---|
+| explicit statement ("we sell directly") | high | skipped |
+| 3+ independent supporting signals | high | skipped |
+| 2 supporting signals | medium | runs |
+| 1 supporting signal | low | runs |
+| named distributor or rep, or MIXED | medium/high | runs |
+| UNKNOWN with a solid profile | none | runs |
+| thin profile | - | skipped, reason names account understanding |
+
+Two supporting signals was rejected as the bar because the costs are asymmetric:
+a needless channel search costs a few queries, a wrong suppression means never
+looking for a channel that exists. The profile now exposes
+`go_to_market_model`, `go_to_market_confidence` and `go_to_market_evidence`, and
+`confidence["go_to_market"]` reads the same graded value so they cannot drift.
+ACRO reads DIRECT / medium / channel-ready, from an internal sales team and named
+account managers.
+
+### Commit 4 — channel discovery
+
+`channel_discovery.py` is the mirror of competitor discovery, and the asymmetry
+is the design:
+
+| | Competitor | Channel |
+|---|---|---|
+| Query carries the account name | no | YES |
+| Page must mention the account | no | YES |
+| What is verified | the candidate's identity, then overlap | the candidate's identity, then a STATED representation |
+| Ceiling | 6 searches, 2 batches | 4 searches, 2 batches |
+| Stop | 3 verified, 1 DIRECT, 2 domains | 2 verified channel entities |
+
+Roles: AUTHORIZED_DISTRIBUTOR, DISTRIBUTOR, REPRESENTATIVE, RESELLER are
+representation. SYSTEM_INTEGRATOR, TECHNOLOGY_PARTNER, SERVICE_PARTNER are
+recorded as related but are NOT channel and never counted as one. Customer,
+supplier and competitor are deliberately absent from this vocabulary.
+
+Representation must be stated with the account inside the statement. "Authorized
+distributor" on its own says the candidate distributes something. A page that
+merely mentions the account - a customer, a directory listing, a news item -
+yields NOT_A_CHANNEL and is counted as `rejected_no_representation`.
+
+Search budgets, per path: provider 8, competitor 6, channel 4, total 18. The
+pre-existing general fallback keeps its own separate ceiling of 4.
+
+The report gains a 20th section, **Distributors & Channel Partners /
+分销与渠道伙伴**, placed between Competitor Analysis and Existing Automation
+Providers. It states the go-to-market model and its confidence first, then
+verified channel entities, then related non-channel organisations separately.
+The prompt's heading count was updated from 19 to 20 and a test asserts the
+template really carries 20.
+
+`channel_discovery.py` deliberately imports nothing from the pipeline.
+`offering_profile` imports `research_service`, which imports this module, so
+depending on `offering_profile` here made import ORDER load-bearing and broke
+whenever the module was imported first.
+
+Manifest gains `execution.channel_discovery`, absolute counters, no monetary
+field: `used`, `searches`, `batches`, `candidates`, `verified_organizations`,
+`channel_entities`, `authorized`, `partners`, `rejected_no_representation`,
+`distinct_domains`, `go_to_market_model`, `go_to_market_confidence`,
+`skip_reason`. The CRM's size assertion moved from 1400 to 2000 bytes; raise it
+only for another block of scalars, never for stored candidates.
+
 ### Tests
 
-`test_competitor_integration.py` — 66 checks, no network, no model call. Runs on
-the stored ACRO package when present and on an inline fixture otherwise
-(`COMPETITOR_FIXTURE_ONLY=1` forces the fixture path). Engine total: **599 checks
-across 15 suites, zero failures.** CRM `test-execution-manifest.js`: 64/64.
+`test_competitor_integration.py` (66) and `test_channel_discovery.py` (90), both
+without network or model calls. Each runs on the stored ACRO package when present
+and on an inline fixture otherwise; `COMPETITOR_FIXTURE_ONLY=1` and
+`CHANNEL_FIXTURE_ONLY=1` force the fixture path. Engine total: **701 checks across
+15 suites, zero failures.** CRM `test-execution-manifest.js`: 75/75.
 
 `test-identity-state.js` errors in section [E] with no message; it needs a live
 `DATABASE_URL` and fails identically on HEAD. Pre-existing, unrelated.
@@ -1822,11 +1895,11 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**Competitor Analysis now means the target account's competitors.** Commits 1
-through 3.5, engine-side, reviewed section by section. Not deployed, no paid run.
-See the dated section above for the flow, the invariants, the manifest shape, the
-three defects found against stored ACRO evidence, and the one semantic question
-Commit 4 depends on.
+**Competitor Analysis now means the target account's competitors, and the report
+has a channel section.** All four commits plus the go-to-market confidence
+correction, engine-side, reviewed stage by stage. Not deployed, no paid run. See
+the dated section above for the flow, the two verification asymmetries, the role
+model, the budgets and the manifest shapes.
 
 ### Previously
 
@@ -1848,19 +1921,20 @@ this, and Tesla was never regenerated.
 
 ## 15. Current Work In Progress
 
-**Commit 3.5 is complete and committed locally; nothing is half-written.** Neither
-repository is deployed at this commit. Commit 4 (target distributor / channel
-discovery) is designed but NOT started, and is held for review of 3.5.
+**Commits 1-4 are complete and committed locally; nothing is half-written.**
+Neither repository is deployed at these commits, and no paid research has run
+against them. Held for review.
 
 ---
 
 ## 16. NEXT ACTIONS
 
-1. Review Commit 3.5; settle whether a single DIRECT cue should gate channel
-   discovery, since Commit 4 depends on that answer.
-2. **Commit 4** — target distributor / channel discovery. Not started.
-3. Decide when to deploy Commits 1-3.5 and whether to spend one Ford control run.
-4. The seeded provider query is its own small commit, with a Ford recall check.
+1. Review Commits 1-4 and decide when to deploy them.
+2. Decide whether to spend one Ford or ACRO control run: nothing in this
+   workstream has been exercised against live retrieval.
+3. The seeded provider query is its own small commit, with a Ford recall check.
+4. Worst-case searches per run rose from 12 to 22 including the general fallback.
+   Confirm that is acceptable before the first live run.
 5. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
 
@@ -1920,8 +1994,9 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-Commit 3.5 (target competitor pipeline integration) is committed in both repos and
-NOT deployed. Commit 4 has not been started. Stopped for review, as instructed.
+All four commits of the Competitor Analysis redefinition, plus the go-to-market
+confidence correction, are committed in both repos and NOT deployed. Stopped for
+review, as instructed.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
