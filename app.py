@@ -65,6 +65,50 @@ def update(job_id, mutate):
             job["updated_at"] = time.time()
 
 
+def execution_facts(package, attempts=None, successful_model=None):
+    """What this run ACTUALLY executed, for the durable manifest.
+
+    Every number is absolute and comes from something that happened: model calls
+    counted from the usage sink, pages from the crawl, retained from the evidence
+    that survived P0-B. Nothing is read from configuration, so a provider that is
+    configured but never called stays absent rather than appearing as used.
+    """
+    pkg = package or {}
+    usage = pkg.get("ai_usage") or []
+    quality = pkg.get("quality") or {}
+    evidence = pkg.get("evidence") or []
+    domains = {rs.registrable_domain(e.get("url") or "") for e in evidence}
+    domains.discard("")
+    att = list(attempts or [])
+    site_pages = int(quality.get("direct_site_sources") or 0)
+    return {
+        "synthesis": {
+            "provider": "bailian",
+            "models_attempted": [a.get("model") for a in att if a.get("model")],
+            "successful_model": successful_model,
+            "calls": len(att),
+        },
+        "retrieval": {
+            "current": {
+                "used": bool(usage) or bool(pkg.get("search_queries")),
+                "model_calls": sum(1 for u in usage if u.get("kind") == "retrieval"),
+                "queries": len(pkg.get("search_queries") or []),
+                "candidates": int(pkg.get("raw_result_count") or 0),
+                "verified": len(evidence),
+                "retained": len(evidence),
+                "domains": len(domains),
+            },
+            "official_site": {
+                "attempted": bool(pkg.get("website")),
+                # Readable, not merely reachable: a blocked site was attempted
+                # and failed, and the report has to be able to say so.
+                "success": site_pages > 0,
+                "pages": site_pages,
+            },
+        },
+    }
+
+
 def save_run(package, run):
     """One JSON file per model, written the moment that model finishes."""
     stamp = datetime.now().astimezone()
@@ -228,6 +272,9 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                    "financial", "apollo", "contacts", "dedupe", "evidence",
                    "quality", "model")
     seen_stages = set()
+    # Set when a model call actually starts, so the live view names the model
+    # that is running rather than the one that was requested.
+    active_model = {"id": None}
 
     def progress(stage, message, **extra):
         def m(job):
@@ -243,6 +290,14 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
         threading.Thread(target=notify_crm, args=(job_id, {
             "event": "progress", "stage": stage, "progress_percent": min(pct, 95),
             "warning": message if str(message).startswith("WARN") else None,
+            # What is running right now. Reported, never guessed: the stage is a
+            # real execution event and the model is named only once synthesis has
+            # actually begun.
+            "active": {"stage": stage,
+                       "tool": "model_search" if stage == "search" else
+                               "page_fetch" if stage in ("site", "verify") else None,
+                       "model": active_model.get("id") if stage == "model" else None,
+                       "provider": "bailian" if stage in ("search", "model") else None},
         }), daemon=True).start()
 
     try:
@@ -287,6 +342,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
 
         def run_model(model):
             started = time.time()
+            active_model["id"] = model
             update(job_id, lambda j: j["models"][model].update(
                 status="generating", started_at=started))
             try:
@@ -363,6 +419,9 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             notify_crm(job_id, {"event": "synthesis_failed",
                                 "company_name": company, "website": website,
                                 "ai_usage": (package.get("ai_usage") or []) + failed_attempts,
+                                # No successful model: that is the whole point of
+                                # this branch, and the manifest must say so.
+                                "execution": execution_facts(package, failed_attempts, None),
                                 "error": "Synthesis failed after all fallbacks. "
                                          "Retrieval evidence preserved."})
             return
@@ -391,6 +450,9 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 # numbers only. The CRM prices it; the engine does not.
                 "ai_usage": (package.get("ai_usage") or [])
                             + list(m.get("ai_attempts") or []),
+                "execution": execution_facts(
+                    package, m.get("ai_attempts"),
+                    (m.get("result") or {}).get("model") or m.get("model_used")),
                 "limitations": quality.get("limitations") or [],
                 "zero_grounding": bool(quality.get("zero_grounding")),
                 "warnings": [st["message"] for st in (snap.get("stages") or [])
