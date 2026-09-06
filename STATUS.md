@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: Competitor Analysis redefinition — commits 1-4 plus five audit fixes; awaiting deploy decision
+> Current phase: P0 synthesis payload budget done; engine deploy pending (fix rides with it)
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -791,6 +791,73 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
 4. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
+
+---
+
+## P0 — synthesis payload budget (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+
+AMADA WELD TECH retrieved sixteen good sources and produced no report. The
+provider answered **HTTP 413**, `Request body size exceeds maximum allowed sized`,
+before counting a single input token. Deterministic, so a rerun would have
+reproduced it.
+
+### Two measurement traps
+
+Retrieval was never unbounded: `CHAR_BUDGET` caps evidence text per tier. The
+request was still rejected because of how it was measured.
+
+1. **Bytes, not characters.** A Chinese character is three bytes of UTF-8, so a
+   900-character cap is 900 bytes of English and 2,700 of Chinese.
+2. **The serialized request, not the prompt.** `post_json` uses `json.dumps`
+   with `ensure_ascii` on, escaping every non-ASCII character to `\uXXXX` — six
+   bytes per Chinese character. AMADA's 76,940-byte prompt was a **97,998-byte
+   request**. Siemens' 127 KB prompt serializes to **213 KB**.
+
+### What was built
+
+`synthesis_payload.py`, importing nothing from the pipeline. Three passes: bound
+each item to its tier's byte ceiling by selecting the strongest passages, then
+shrink the largest item repeatedly down to a 400-byte floor, then drop only as a
+last resort, duplicate domains and weakest tiers first, never below six sources.
+Preflight measures the SERIALIZED request and re-measures after each pass,
+because escaping is not linear in characters.
+
+| Setting | Value |
+|---|---|
+| Normal budget | 48,000 B, `SYNTHESIS_PAYLOAD_BUDGET_BYTES` |
+| Emergency budget | 24,000 B, exactly half |
+| Item ceilings by tier | 6000 / 4500 / 3000 / 2400 / 2000 / 1200 B |
+| Emergency ceilings | 2600 / 2000 / 1400 / 1100 / 900 / 600 B |
+| Item floor | 400 B, 300 B in emergency |
+| Minimum sources | 6, unless retrieval found fewer |
+
+On HTTP 413 the run compacts to the emergency budget and retries **once**. Both
+attempts are accounted; a 413 is a real attempt even though the provider counted
+no tokens for it.
+
+### Three uncapped paths closed
+
+`tavily_verifier`, `competitor_verifier` and `channel_verifier` stored the full
+fetched page as evidence text. AMADA's own site carries a brochure PDF returning
+**3,155,487 characters, 5.7 MB**. All three now apply the same `CHAR_BUDGET` every
+other evidence path applies. Verification still reads the whole page.
+
+### Results
+
+| Package | Before | After | Sources | Domains |
+|---|---|---|---|---|
+| AMADA | 97,998 B | 46,109 B | 16 → 16 | 7 → 7 |
+| Siemens, 52% CJK | 213,024 B | 44,949 B | 16 → 16 | 6 → 6 |
+
+Across all 38 stored packages: none exceeds the budget, **none loses a source,
+none loses a domain**. Max after 47,993 B, median 42,432 B.
+
+### The endpoint question is closed
+
+Qwen 3.6 requires the multimodal DashScope API; the text-generation API is not a
+supported route for it. Do not "fix" this by switching endpoints. The exact
+provider body limit remains undocumented, which is why the ceiling is ours and
+configurable.
 
 ---
 
@@ -1987,10 +2054,10 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**The redefinition is complete and its pre-deployment audit is closed.** Four
-commits, a go-to-market correction, and five audit fixes. Not deployed, no paid
-run. The audit section above lists every defect and how it was fixed; the section
-after it describes the pipeline itself.
+**The synthesis payload budget closes the P0 that AMADA exposed.** Before it,
+the redefinition work was complete and audited. None of it is deployed. The
+payload fix ships WITH the competitor and channel work rather than after it, so
+the known 413 behaviour is never exposed in production.
 
 ### Previously
 
@@ -2085,9 +2152,9 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-The Competitor Analysis redefinition and its pre-deployment audit are both
-closed. Five audit defects found and fixed as commits A-E. Nothing deployed, no
-paid research run. Stopped for the deploy decision, as instructed.
+The synthesis payload budget is implemented and tested locally. Nothing deployed,
+no paid model call made. The engine still needs a manual Render deploy, and this
+fix must go out in the same deployment as the competitor and channel work.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both

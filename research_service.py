@@ -30,6 +30,7 @@ import urllib.request
 import channel_discovery as chdisc
 import competitor_discovery as cdisc
 import offering_profile as op
+import synthesis_payload as sp
 import tavily_service as tv
 import zlib
 from pathlib import Path
@@ -220,6 +221,10 @@ CONFIG_KEYS = (
     # environment first, ai_credentials.env as a LOCAL overlay only. Nothing
     # reads these yet; the Tavily comparison is still an experiment.
     "TAVILY_MCP_URL", "TAVILY_API_KEY",
+    # The synthesis request ceiling, in BYTES of the serialized body. In
+    # configuration so it can be raised without a deploy once the provider's
+    # real limit is known, and lowered if another provider proves stricter.
+    "SYNTHESIS_PAYLOAD_BUDGET_BYTES",
 )
 
 REQUIRED_KEYS = ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL",
@@ -1676,7 +1681,12 @@ def tavily_verifier(name, name_cn, domain, aliases, registry, sink):
             item = {"url": f["url"], "title": f["title"], "tier": tier,
                     "source_type": kind, "official": False,
                     "domain": registrable_domain(f["url"]),
-                    "text": body, "hits": 1, "topics": [intent_key],
+                    # The same per-tier ceiling every other evidence path
+                    # applies. Verification reads the WHOLE page above; the
+                    # retained item is a bounded record of it, or one PDF puts
+                    # five megabytes into the synthesis request.
+                    "text": body[:CHAR_BUDGET.get(tier, 900)],
+                    "hits": 1, "topics": [intent_key],
                     "provenance": prov or PROV_TARGET, "entity": entity,
                     "content_verified": True, "discovered_by": "tavily",
                     "intent": intent_key}
@@ -1813,7 +1823,10 @@ def competitor_verifier(profile, name, name_cn, aliases, sink):
             out["evidence"].append({
                 "url": f["url"], "title": f.get("title") or org,
                 "domain": registrable_domain(f["url"]),
-                "text": body, "tier": 5, "source_type": "competitor-page",
+                # Bounded like every other evidence path; verification above
+                # read the whole page.
+                "text": body[:CHAR_BUDGET.get(5, 900)],
+                "tier": 5, "source_type": "competitor-page",
                 "official": False, "hits": 1, "topics": [intent_key],
                 "provenance": PROV_MARKET, "content_verified": True,
                 "discovered_by": "tavily", "competitor": org,
@@ -1909,7 +1922,8 @@ def channel_verifier(profile, name, name_cn, aliases, sink):
             out["evidence"].append({
                 "url": f["url"], "title": f.get("title") or org,
                 "domain": registrable_domain(f["url"]),
-                "text": body, "tier": 5, "source_type": "channel-page",
+                "text": body[:CHAR_BUDGET.get(5, 900)],
+                "tier": 5, "source_type": "channel-page",
                 "official": False, "hits": 1, "topics": [intent_key],
                 "provenance": PROV_ECOSYSTEM, "content_verified": True,
                 "discovered_by": "tavily", "channel": org,
@@ -2902,6 +2916,26 @@ def post_json_stream(url, payload, api_key, timeout, on_text):
     return 200, (last or {"output": {"choices": [{"message": {"content": text}}]}})
 
 
+# The request ceiling, in bytes of the SERIALIZED body. 48 KB is 49% of the
+# 97,986-byte AMADA request the provider rejected, which leaves real headroom
+# under a limit the provider does not document.
+SYNTHESIS_BUDGET_BYTES = 48000
+# Materially lower, not a retry of the same request: half the normal budget.
+SYNTHESIS_EMERGENCY_BUDGET_BYTES = 24000
+# Emergency ceilings per tier. Same shape as the normal ones, roughly halved.
+SYNTHESIS_EMERGENCY_ITEM_BYTES = {1: 2600, 2: 2000, 3: 1400, 4: 1100, 5: 900, 6: 600}
+
+
+def synthesis_budget(cfg, emergency=False):
+    if emergency:
+        return SYNTHESIS_EMERGENCY_BUDGET_BYTES
+    try:
+        value = int((cfg or {}).get("SYNTHESIS_PAYLOAD_BUDGET_BYTES") or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return value if value > 0 else SYNTHESIS_BUDGET_BYTES
+
+
 ZERO_GROUNDING_NOTICE = """
 
 ---
@@ -2929,7 +2963,7 @@ A short honest report is the correct output here. Do not pad it.
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
                apollo_people=None, on_section=None, providers=None, aliases=(),
-               competitors=None, profile=None, channels=None):
+               competitors=None, profile=None, channels=None, emergency=False):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -2937,28 +2971,79 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     """
     path, is_multi = endpoint_for(model, cfg)
     url = cfg["DASHSCOPE_BASE_URL"].rstrip("/") + path
-    prompt = INSTRUCTION.format(
+    import provider_view as pv
+
+    head = INSTRUCTION.format(
         company=company, site=" (website: {})".format(website) if website else "",
-        capabilities=SKEQI_CAPABILITIES,
-    ) + render_evidence(evidence)
-    # ZERO-GROUNDING MODE. Derived from the evidence set itself so it can never
-    # disagree with what was actually retrieved. Continuation is unconditional;
-    # inventing facts is not. Say the words rather than let the model fill gaps
-    # from parametric memory.
-    if not evidence:
-        prompt += ZERO_GROUNDING_NOTICE
+        capabilities=SKEQI_CAPABILITIES)
+    # Everything that is NOT evidence. Verified rows and contacts are small and
+    # irreplaceable - together under 4% of the AMADA request - so the budget is
+    # taken out of evidence text, never out of a verified fact.
+    tail = ""
     block = people.to_prompt_block(apollo_people or [], company)
     if block:
-        prompt += "\n\n---\n\n" + block
-    # The verified provider rows, as FACTS. The model describes what retrieval
-    # proved rather than reconstructing it from prose - and the same rows are
-    # used afterwards to correct what it wrote.
-    import provider_view as pv
-    prompt += pv.provider_prompt_block(providers, company)
-    prompt += pv.competitor_prompt_block(competitors, profile)
-    prompt += pv.channel_prompt_block(channels, profile)
+        tail += "\n\n---\n\n" + block
+    tail += pv.provider_prompt_block(providers, company)
+    tail += pv.competitor_prompt_block(competitors, profile)
+    tail += pv.channel_prompt_block(channels, profile)
+
+    def assemble(items):
+        # ZERO-GROUNDING MODE. Derived from the evidence set itself so it can
+        # never disagree with what was actually retrieved. Continuation is
+        # unconditional; inventing facts is not.
+        body = head + render_evidence(items)
+        if not items:
+            body += ZERO_GROUNDING_NOTICE
+        return body + tail
+
+    def wrap(text):
+        return {"model": model,
+                "input": {"messages": [{"role": "user",
+                                        "content": [{"text": text}] if is_multi else text}]},
+                "parameters": {} if is_multi else {"result_format": "message"}}
+
+    def fit(items, available, emergency_mode):
+        return sp.compact(
+            items, company, max(available, 0), render_evidence, aliases,
+            ceilings=SYNTHESIS_EMERGENCY_ITEM_BYTES if emergency_mode else None,
+            floor=sp.EMERGENCY_ITEM_FLOOR if emergency_mode else sp.ITEM_FLOOR)
+
+    # PREFLIGHT, measured on the SERIALIZED request because that is what the
+    # provider measures: json.dumps escapes every non-ASCII character to \uXXXX,
+    # six bytes per Chinese character, which added 19.8% to the AMADA request.
+    budget = synthesis_budget(cfg, emergency)
+    items = list(evidence or [])
+    before_bytes = sp.utf8(render_evidence(items))
+    prompt = assemble(items)
+    payload_stats = sp.empty_stats()
+    payload_stats.update(
+        budget_bytes=budget, emergency_compaction=bool(emergency),
+        evidence_items_before=len(items), evidence_items_after=len(items),
+        evidence_bytes_before=before_bytes, evidence_bytes_after=before_bytes,
+        sources_preserved=len(items),
+        domains_preserved=len({e.get("domain") for e in items if e.get("domain")}))
+    if items and (emergency or sp.serialized_bytes(wrap(prompt)) > budget):
+        overhead = sp.serialized_bytes(wrap(assemble([]))) - sp.utf8(assemble([]))
+        available = budget - sp.utf8(head) - sp.utf8(tail) - overhead
+        guard = 0
+        while True:
+            items, stats = fit(items, available, emergency)
+            prompt = assemble(items)
+            stats.update(budget_bytes=budget, emergency_compaction=bool(emergency),
+                         evidence_items_before=payload_stats["evidence_items_before"],
+                         evidence_bytes_before=before_bytes,
+                         compaction_applied=True)
+            payload_stats = stats
+            guard += 1
+            # Escaping is not linear in characters, so one measured pass is not
+            # a proof. Shrink and re-measure until the request itself fits.
+            if sp.serialized_bytes(wrap(prompt)) <= budget or guard >= 12:
+                break
+            available = int(available * 0.85)
     content = [{"text": prompt}] if is_multi else prompt
     params = {} if is_multi else {"result_format": "message"}
+    payload_stats["payload_bytes"] = sp.serialized_bytes(wrap(prompt))
+    payload_stats["estimated_input_tokens"] = sp.estimate_tokens(prompt)
     started = time.time()
 
     # Live output. Streaming exists ONLY to publish sections as they are written;
@@ -3041,6 +3126,9 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
         # Visible on the job and in the saved record, so the next person does not
         # have to infer from timestamps whether streaming actually happened.
         "stream_diagnostics": stream_diag,
+        # What the preflight budget actually did. Sizes and counts only: the
+        # prompt body is never carried out of this function.
+        "payload": payload_stats,
     }
 
 
@@ -3073,6 +3161,23 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
                          "input_tokens": run.get("input_tokens") or 0,
                          "output_tokens": run.get("output_tokens") or 0,
                          "total_tokens": run.get("total_tokens") or 0})
+        # The preflight ceiling is our own guess at a limit the provider does not
+        # publish. If it guessed high, compact harder and try ONCE more - never
+        # a loop, and never the same request again. A 413 is a real attempt even
+        # though the provider counted no tokens for it, so it stays in `attempts`.
+        if run.get("status") == 413:
+            progress("Request too large for the provider - retrying once with a "
+                     "compacted evidence representation")
+            run = synthesize(candidate, company, website, evidence, cfg, timeout,
+                             apollo_people=apollo_people, on_section=on_section,
+                             providers=providers, aliases=aliases,
+                             competitors=competitors, profile=profile,
+                             channels=channels, emergency=True)
+            attempts.append({"model": candidate, "kind": "synthesis",
+                             "status": run.get("status"),
+                             "input_tokens": run.get("input_tokens") or 0,
+                             "output_tokens": run.get("output_tokens") or 0,
+                             "total_tokens": run.get("total_tokens") or 0})
         run["ai_attempts"] = list(attempts)
         run["requested_model"] = model
         run["model_used"] = candidate

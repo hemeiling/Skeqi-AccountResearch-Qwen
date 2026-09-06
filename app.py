@@ -65,7 +65,16 @@ def update(job_id, mutate):
             job["updated_at"] = time.time()
 
 
-def execution_facts(package, attempts=None, successful_model=None):
+def _last_payload(snapshot):
+    """The payload record of whichever model attempt ran last. A failed run needs
+    its sizes more than a successful one does."""
+    for mv in reversed(list((snapshot or {}).get("models", {}).values())):
+        if mv.get("payload"):
+            return mv["payload"]
+    return None
+
+
+def execution_facts(package, attempts=None, successful_model=None, payload=None):
     """What this run ACTUALLY executed, for the durable manifest.
 
     Every number is absolute and comes from something that happened: model calls
@@ -117,6 +126,31 @@ def execution_facts(package, attempts=None, successful_model=None):
         "channel_discovery": _channel_facts(pkg.get("channel_coverage"),
                                             pkg.get("channels"),
                                             pkg.get("profile")),
+        "synthesis_payload": _payload_facts(payload),
+    }
+
+
+def _payload_facts(payload):
+    """What the preflight budget did to the request.
+
+    Sizes and counts only. The prompt body and the evidence bodies are never
+    stored here: this record exists to diagnose a size failure later, and a
+    record that contains the payload is the payload.
+    """
+    p = payload or {}
+    n = lambda k: int(p.get(k) or 0)
+    return {
+        "synthesis_payload_bytes": n("payload_bytes"),
+        "synthesis_estimated_input_tokens": n("estimated_input_tokens"),
+        "synthesis_budget_bytes": n("budget_bytes"),
+        "synthesis_compaction_applied": bool(p.get("compaction_applied")),
+        "synthesis_emergency_compaction": bool(p.get("emergency_compaction")),
+        "synthesis_evidence_items_before": n("evidence_items_before"),
+        "synthesis_evidence_items_after": n("evidence_items_after"),
+        "synthesis_evidence_bytes_before": n("evidence_bytes_before"),
+        "synthesis_evidence_bytes_after": n("evidence_bytes_after"),
+        "synthesis_sources_preserved": n("sources_preserved"),
+        "synthesis_domains_preserved": n("domains_preserved"),
     }
 
 
@@ -479,6 +513,8 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                     # ever emitted: completed runs reported 0 synthesis calls and
                     # the cost shown was retrieval only.
                     ai_attempts=list(run.get("ai_attempts") or []),
+                    # Sizes and counts from the preflight budget, never the body.
+                    payload=run.get("payload") or {},
                     error=run["error"], model_used=run.get("model_used"),
                     fallback_used=bool(run.get("fallback_used")),
                     models_tried=run.get("models_tried") or [],
@@ -523,7 +559,9 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                                 "ai_usage": (package.get("ai_usage") or []) + failed_attempts,
                                 # No successful model: that is the whole point of
                                 # this branch, and the manifest must say so.
-                                "execution": execution_facts(package, failed_attempts, None),
+                                "execution": execution_facts(
+                                    package, failed_attempts, None,
+                                    payload=_last_payload(snap)),
                                 "error": "Synthesis failed after all fallbacks. "
                                          "Retrieval evidence preserved."})
             return
@@ -554,7 +592,8 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                             + list(m.get("ai_attempts") or []),
                 "execution": execution_facts(
                     package, m.get("ai_attempts"),
-                    (m.get("result") or {}).get("model") or m.get("model_used")),
+                    (m.get("result") or {}).get("model") or m.get("model_used"),
+                    payload=m.get("payload")),
                 "limitations": quality.get("limitations") or [],
                 "zero_grounding": bool(quality.get("zero_grounding")),
                 "warnings": [st["message"] for st in (snap.get("stages") or [])
