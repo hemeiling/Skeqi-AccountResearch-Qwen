@@ -142,6 +142,7 @@ def _channel_facts(cov, channels, profile):
         "authorized": sum(1 for c in reps if c.get("authorized")),
         "partners": len(rows) - len(reps),
         "rejected_no_representation": int(cov.get("rejected_no_representation") or 0),
+        "failed": bool(cov.get("failed")),
         "distinct_domains": int(cov.get("distinct_domains") or 0),
         "go_to_market_model": prof.get("go_to_market_model")
                               or cov.get("go_to_market_model"),
@@ -171,6 +172,8 @@ def _competitor_facts(cov, competitors, profile):
         "partial": sum(1 for c in rows if c.get("competition_type") == "PARTIAL"),
         "adjacent": sum(1 for c in rows if c.get("competition_type") == "ADJACENT"),
         "rejected_same_industry": int(cov.get("rejected_same_industry") or 0),
+        # The stage ran and broke, which is not the same as never running.
+        "failed": bool(cov.get("failed")),
         "distinct_domains": int(cov.get("distinct_domains") or 0),
         "profile_confidence": (profile or {}).get("confidence")
                               or cov.get("profile_confidence"),

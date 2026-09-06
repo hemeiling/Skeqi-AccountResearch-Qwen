@@ -190,7 +190,7 @@ def empty_coverage():
             "channel_entities": 0, "authorized": 0, "partners": 0,
             "rejected_no_representation": 0, "skip_reason": None,
             "go_to_market_model": None, "go_to_market_confidence": None,
-            "queries": []}
+            "queries": [], "failed": False}
 
 
 def coverage_is_useful(cov):
@@ -215,7 +215,13 @@ def discover(client, profile, account, verify, name_cn="", progress=None,
     for batch in (1, 2):
         if cov["search_count"] >= ceiling:
             break
-        intents = plan_intents(prof, account, name_cn, batch=batch, covered=covered)
+        try:
+            intents = plan_intents(prof, account, name_cn, batch=batch, covered=covered)
+        except Exception as e:
+            cov["failed"] = True
+            progress("channel", "WARN query planning failed ({}) - continuing"
+                           .format(type(e).__name__))
+            break
         intents = intents[:max(0, ceiling - cov["search_count"])]
         if not intents:
             break
@@ -234,7 +240,15 @@ def discover(client, profile, account, verify, name_cn="", progress=None,
             fresh = [h for h in hits if h.get("url") not in seen]
             seen.update(h.get("url") for h in hits)
             cov["candidates"] += len(fresh)
-            out = verify(fresh, key) or {}
+            # Verification reaches the network and the page parsers. A failure
+            # there costs this batch's candidates, never the run.
+            try:
+                out = verify(fresh, key) or {}
+            except Exception as e:
+                cov["failed"] = True
+                progress("channel", "WARN verification failed ({}) - continuing"
+                               .format(type(e).__name__))
+                continue
             kept.extend(out.get("evidence") or [])
             cov["verified"] += out.get("verified", 0)
             cov["channel_entities"] += out.get("channel_entities", 0)

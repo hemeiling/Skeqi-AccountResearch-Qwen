@@ -283,6 +283,30 @@ def build_profile(evidence, name, domain="", aliases=()):
     return prof
 
 
+def unavailable_profile(name, reason):
+    """The profile a caller gets when construction FAILED, rather than an
+    exception. Shaped exactly like a real profile so every downstream reader
+    works unchanged, and not ready for either discovery path, so nothing is
+    searched on a profile we do not have."""
+    return {
+        "account": name, "offerings": [], "capabilities": [], "industries": [],
+        "project_types": [], "geography": [], "business_model": "unknown",
+        "go_to_market_model": UNKNOWN, "go_to_market_confidence": "none",
+        "go_to_market_evidence": {"signals": [], "direct_signal_count": 0,
+                                  "explicit_direct_statement": False,
+                                  "channel_signal_count": 0},
+        "uses_not_sells": [], "supporting_evidence": {}, "own_site_pages": 0,
+        "evidence_count": 0, "unavailable": True,
+        "confidence": {"offerings": "none", "capabilities": "none",
+                       "industries": "none", "geography": "none",
+                       "business_model": "none", "go_to_market": "none"},
+        "competitor_discovery_ready": False,
+        "competitor_skip_reason": reason,
+        "channel_discovery_ready": False,
+        "channel_skip_reason": reason,
+    }
+
+
 def _project_types(offerings, capabilities):
     out = []
     joined = " ".join(list(offerings) + list(capabilities)).lower()

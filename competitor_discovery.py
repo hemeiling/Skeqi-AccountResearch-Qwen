@@ -193,7 +193,7 @@ def empty_coverage():
             "verified": 0, "retained": 0, "distinct_domains": 0,
             "contribution_count": 0, "direct": 0, "partial": 0, "adjacent": 0,
             "rejected_same_industry": 0, "skip_reason": None,
-            "profile_confidence": None, "queries": []}
+            "profile_confidence": None, "queries": [], "failed": False}
 
 
 def coverage_is_useful(cov):
@@ -217,7 +217,14 @@ def discover(client, profile, verify, progress=None, ceiling=MAX_COMPETITOR_SEAR
     for batch in (1, 2):
         if cov["search_count"] >= ceiling:
             break
-        intents = plan_intents(profile, batch=batch, covered=covered)
+        # A planner defect must not discard the batch that already succeeded.
+        try:
+            intents = plan_intents(profile, batch=batch, covered=covered)
+        except Exception as e:
+            cov["failed"] = True
+            progress("competitors", "WARN query planning failed ({}) - continuing"
+                           .format(type(e).__name__))
+            break
         intents = intents[:max(0, ceiling - cov["search_count"])]
         if not intents:
             break
@@ -236,7 +243,15 @@ def discover(client, profile, verify, progress=None, ceiling=MAX_COMPETITOR_SEAR
             fresh = [h for h in hits if h.get("url") not in seen]
             seen.update(h.get("url") for h in hits)
             cov["candidates"] += len(fresh)
-            out = verify(fresh, key) or {}
+            # Verification reaches the network and the page parsers. A failure
+            # there costs this batch's candidates, never the run.
+            try:
+                out = verify(fresh, key) or {}
+            except Exception as e:
+                cov["failed"] = True
+                progress("competitors", "WARN verification failed ({}) - continuing"
+                               .format(type(e).__name__))
+                continue
             kept.extend(out.get("evidence") or [])
             cov["verified"] += out.get("verified", 0)
             cov["contribution_count"] += out.get("competitors", 0)

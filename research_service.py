@@ -19,8 +19,10 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -3241,6 +3243,18 @@ def contact_outcome(crm_people, final_people, usage, company):
             .format(supplied, status or "no result"))
 
 
+def _log_stage_failure(stage, exc):
+    """An optional stage failed. The user keeps their report; the traceback still
+    has to reach the log, or a programming defect becomes invisible the moment it
+    is survivable."""
+    try:
+        sys.stderr.write("[account-research] {} failed: {}\n{}\n".format(
+            stage, exc, traceback.format_exc()))
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 def build_shared_evidence(company, website, cfg, progress=None, trust_website=False,
                           known_contacts=None):
     """Stage 1-6, run ONCE per company. The result is shared by every model and cached.
@@ -3644,11 +3658,21 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     # Built here, after retention, because that is the first point at which the
     # evidence set is the one the report will actually stand on.
     t = time.time()
-    profile = op.build_profile(evidence, name, domain, aliases)
+    try:
+        profile = op.build_profile(evidence, name, domain, aliases)
+    except Exception as e:
+        # The profile is an ENHANCEMENT. Without it both discovery paths stand
+        # down, and the report is written from the evidence already retained.
+        _log_stage_failure("offering_profile", e)
+        profile = op.unavailable_profile(
+            name, "account profile could not be built ({})".format(type(e).__name__))
+        limitation("profile", "Account profile unavailable ({}); competitor and "
+                              "channel discovery stood down".format(type(e).__name__))
     timings["offering_profile"] = round(time.time() - t, 1)
-    progress("profile", "Account profile: {} | sells {} | go-to-market {}".format(
-        profile["business_model"], ", ".join(profile["capabilities"][:3]) or "unclear",
-        profile["go_to_market_model"]))
+    if not profile.get("unavailable"):
+        progress("profile", "Account profile: {} | sells {} | go-to-market {}".format(
+            profile["business_model"], ", ".join(profile["capabilities"][:3]) or "unclear",
+            profile["go_to_market_model"]))
 
     # ---- target-competitor discovery, gated on that profile ----
     competitors = []
@@ -3657,8 +3681,20 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     comp_cov["profile_confidence"] = profile.get("confidence")
     if client is not None:
         t = time.time()
-        cverify = competitor_verifier(profile, name, name_cn, aliases, competitors)
-        comp_evidence, comp_cov = cdisc.discover(client, profile, cverify, progress=progress)
+        try:
+            cverify = competitor_verifier(profile, name, name_cn, aliases, competitors)
+            comp_evidence, comp_cov = cdisc.discover(client, profile, cverify,
+                                                     progress=progress)
+        except Exception as e:
+            # Whatever this path had already merged into `competitors` is kept:
+            # a crash on the fourth query does not erase the first three.
+            _log_stage_failure("competitor_discovery", e)
+            comp_cov["failed"] = True
+            comp_cov["skip_reason"] = "competitor discovery failed ({})".format(
+                type(e).__name__)
+            limitation("competitors", "Competitor discovery failed ({}); continued "
+                                      "on the evidence already collected"
+                                      .format(type(e).__name__))
         timings["competitor_discovery"] = round(time.time() - t, 1)
         if comp_evidence:
             # Verified competitor pages are real sources and re-enter retention
@@ -3682,11 +3718,20 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
     chan_cov = chdisc.empty_coverage()
     chan_cov["go_to_market_model"] = profile.get("go_to_market_model")
     chan_cov["go_to_market_confidence"] = profile.get("go_to_market_confidence")
+    chan_evidence = []
     if client is not None:
         t = time.time()
-        hverify = channel_verifier(profile, name, name_cn, aliases, channels)
-        chan_evidence, chan_cov = chdisc.discover(client, profile, name, hverify,
-                                                  name_cn=name_cn, progress=progress)
+        try:
+            hverify = channel_verifier(profile, name, name_cn, aliases, channels)
+            chan_evidence, chan_cov = chdisc.discover(client, profile, name, hverify,
+                                                      name_cn=name_cn, progress=progress)
+        except Exception as e:
+            _log_stage_failure("channel_discovery", e)
+            chan_cov["failed"] = True
+            chan_cov["skip_reason"] = "channel discovery failed ({})".format(
+                type(e).__name__)
+            limitation("channel", "Channel discovery failed ({}); continued on the "
+                                  "evidence already collected".format(type(e).__name__))
         timings["channel_discovery"] = round(time.time() - t, 1)
         if chan_evidence:
             evidence, dropped = apply_evidence_caps(
