@@ -78,9 +78,27 @@ class TavilyClient:
     def _open(self):
         req = urllib.request.Request(self.url, headers={
             "Authorization": "Bearer " + self.api_key, "Accept": "text/event-stream"})
+        # A failure to OPEN is a real error and keeps its previous behaviour:
+        # connect() sees no endpoint and raises TavilyUnavailable.
         self._stream = urllib.request.urlopen(req, timeout=self.timeout)
+        try:
+            self._read(self._stream)
+        except Exception:
+            # close() tears the socket out from under this loop, so the read that
+            # was already in flight fails. urllib's response sets fp to None on
+            # close, which surfaces as AttributeError from inside a DAEMON thread
+            # - harmless, because the call it was serving has already returned,
+            # but it printed a traceback to stderr on every run that used Tavily
+            # and read like a failure.
+            #
+            # Only the shutdown race is swallowed. A stream that dies while we
+            # still wanted it is a real fault and is re-raised exactly as before.
+            if not self._stop.is_set():
+                raise
+
+    def _read(self, stream):
         buf = ""
-        for raw in self._stream:
+        for raw in stream:
             if self._stop.is_set():
                 return
             buf += raw.decode("utf-8", "replace")
@@ -120,10 +138,15 @@ class TavilyClient:
         return self
 
     def close(self):
+        """Safe on a client that was never connected, and safe to call twice."""
         self._stop.set()
+        # Drop the reference BEFORE closing, so a second close cannot touch a
+        # half-closed object and a partially-initialised client has nothing to
+        # close at all.
+        stream, self._stream = self._stream, None
         try:
-            if self._stream:
-                self._stream.close()
+            if stream is not None:
+                stream.close()
         except Exception:
             pass
 
