@@ -127,9 +127,12 @@ check("the fallback path threads it through",
       "on_section" in rs.synthesize_with_fallback.__code__.co_varnames)
 check("a streaming helper exists", callable(rs.post_json_stream))
 src = open("research_service.py", encoding="utf-8").read()
-i = src.index("def synthesize(")
+# The WHOLE function, not a fixed byte window. The window version broke the day
+# synthesize grew a provider block, reporting a streaming regression that had not
+# happened - a test that fails when unrelated code moves is measuring position.
+body = src[src.index("def synthesize("):src.index("\ndef synthesize_with_fallback")]
 check("a streaming failure falls back to the blocking request",
-      "post_json_stream" in src[i:i + 3000] and "return post_json(url, payload" in src[i:i + 3000])
+      "post_json_stream" in body and "return post_json(url, payload" in body)
 
 print("\n{} passed, {} failed".format(len(PASS), len(FAIL)))
 for f in FAIL:

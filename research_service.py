@@ -2620,7 +2620,7 @@ A short honest report is the correct output here. Do not pad it.
 
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
-               apollo_people=None, on_section=None):
+               apollo_people=None, on_section=None, providers=None, aliases=()):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -2641,6 +2641,11 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     block = people.to_prompt_block(apollo_people or [], company)
     if block:
         prompt += "\n\n---\n\n" + block
+    # The verified provider rows, as FACTS. The model describes what retrieval
+    # proved rather than reconstructing it from prose - and the same rows are
+    # used afterwards to correct what it wrote.
+    import provider_view as pv
+    prompt += pv.provider_prompt_block(providers, company)
     content = [{"text": prompt}] if is_multi else prompt
     params = {} if is_multi else {"result_format": "message"}
     started = time.time()
@@ -2730,7 +2735,7 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
 
 def synthesize_with_fallback(model, company, website, evidence, cfg,
                              timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None,
-                             on_section=None):
+                             on_section=None, providers=None, aliases=()):
     """Synthesise with the requested model, falling back on access denial.
 
     An unusable model must not become an empty report: the user asked for
@@ -2747,7 +2752,8 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
     attempts = []
     for candidate in model_candidates(cfg, preferred=model):
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
-                         apollo_people=apollo_people, on_section=on_section)
+                         apollo_people=apollo_people, on_section=on_section,
+                         providers=providers, aliases=aliases)
         attempts.append({"model": candidate, "kind": "synthesis",
                          "status": run.get("status"),
                          "input_tokens": run.get("input_tokens") or 0,
@@ -2763,6 +2769,14 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
             if run["fallback_used"]:
                 progress("Research completed using: {}".format(
                     MODEL_LABELS.get(candidate, candidate)))
+            # Correct the rendered report against the SAME verified rows the
+            # prompt was given. Prompt instructions are not a guarantee: a
+            # category in the Company column is removed from it whatever the
+            # model was told, and moved to the field it belongs in.
+            if run.get("report"):
+                import provider_view as pv
+                run["report"], run["provider_notes"] = pv.enforce(
+                    run["report"], providers, company, aliases)
             return run
         tried.append(MODEL_LABELS.get(candidate, candidate))
         last = run

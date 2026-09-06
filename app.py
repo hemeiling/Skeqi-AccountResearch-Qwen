@@ -378,6 +378,8 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             try:
                 run = rs.synthesize_with_fallback(
                     model, company, website, package["evidence"], cfg,
+                    providers=package.get("providers") or [],
+                    aliases=package.get("aliases") or [],
                     apollo_people=(package.get("apollo") or {}).get("people"),
                     progress=lambda m: progress("model", m),
                     # Live output, part two: sections reach the CRM as they are
