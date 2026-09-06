@@ -138,10 +138,10 @@ print("\n[5b] Channel readiness does not require a KNOWN go-to-market")
 check("UNKNOWN plus a solid profile is READY to search",
       p["go_to_market_model"] == op.UNKNOWN and p["channel_discovery_ready"],
       "%s / %s" % (p["go_to_market_model"], p["channel_skip_reason"]))
-check("verified DIRECT skips the search instead",
+check("STRONGLY corroborated DIRECT skips the search instead",
       not op.build_profile(SELLS_DIRECT, "S", "s.com")["channel_discovery_ready"])
-check("and says the model was verified, not that evidence was missing",
-      "verified as DIRECT" in
+check("and says the model was corroborated, not that evidence was missing",
+      "corroborated as DIRECT" in
       (op.build_profile(SELLS_DIRECT, "S", "s.com")["channel_skip_reason"] or ""))
 check("DISTRIBUTOR_LED is ready", op.build_profile(DIST, "D", "d.com")["channel_discovery_ready"])
 check("REPRESENTATIVE_LED is ready", op.build_profile(REP, "R", "r.com")["channel_discovery_ready"])
@@ -154,6 +154,97 @@ check("and the reason names understanding, not the missing model",
       "account understanding" in (thin["channel_skip_reason"] or "")
       and "go_to_market" not in (thin["channel_skip_reason"] or ""),
       str(thin["channel_skip_reason"]))
+
+print("\n[5c] A sales team is not proof that no channel exists")
+# The gating question is NOT "does this company sell direct" - almost everyone
+# does, alongside whatever channel they run. It is "is direct selling corroborated
+# strongly enough that looking for a channel would be wasted". Only an explicit
+# statement, or several independent signals, clears that bar.
+SALES_TEAM_ONLY = [ev("https://one.com/", "Company", official=True, domain="one.com",
+                      text="One Corp designs and builds custom automated assembly "
+                           "systems and robotic welding cells for automotive "
+                           "manufacturers. Our sales team works closely with every "
+                           "customer.")]
+one = op.build_profile(SALES_TEAM_ONLY, "One Corp", "one.com")
+check("'our sales team' alone supports DIRECT", one["go_to_market_model"] == op.DIRECT)
+check("but only at LOW confidence", one["go_to_market_confidence"] == "low",
+      one["go_to_market_confidence"])
+check("so channel discovery still runs", one["channel_discovery_ready"],
+      str(one["channel_skip_reason"]))
+check("and the signal is recorded as supporting, not explicit",
+      one["go_to_market_evidence"]["explicit_direct_statement"] is False
+      and [g["strength"] for g in one["go_to_market_evidence"]["signals"]] == ["supporting"])
+
+QUOTE_ONLY = [ev("https://two.com/", "Company", official=True, domain="two.com",
+                 text="Two Corp designs and builds custom automated assembly systems "
+                      "and robotic welding cells for automotive manufacturers. "
+                      "Request a quote for your next project.")]
+two = op.build_profile(QUOTE_ONLY, "Two Corp", "two.com")
+check("a quote form alone is LOW confidence", two["go_to_market_confidence"] == "low",
+      two["go_to_market_confidence"])
+check("and does not suppress channel discovery", two["channel_discovery_ready"])
+
+EXPLICIT = [ev("https://three.com/", "How we sell", official=True, domain="three.com",
+               text="Three Corp designs and builds custom automated assembly systems "
+                    "and robotic welding cells for automotive manufacturers. "
+                    "We sell directly to customers.")]
+three = op.build_profile(EXPLICIT, "Three Corp", "three.com")
+check("an explicit statement gives HIGH confidence",
+      three["go_to_market_model"] == op.DIRECT
+      and three["go_to_market_confidence"] == "high", three["go_to_market_confidence"])
+check("it is marked explicit", three["go_to_market_evidence"]["explicit_direct_statement"])
+check("and it MAY suppress channel discovery", not three["channel_discovery_ready"])
+check("the reason names the statement, not an absence",
+      "explicit statement" in (three["channel_skip_reason"] or ""),
+      str(three["channel_skip_reason"]))
+
+MANY = [ev("https://four.com/", "Sales", official=True, domain="four.com",
+           text="Four Corp designs and builds custom automated assembly systems and "
+                "robotic welding cells for automotive manufacturers. Contact our "
+                "sales team, request a quote, and our account managers will "
+                "contract directly with you.")]
+four = op.build_profile(MANY, "Four Corp", "four.com")
+check("several independent supporting signals also reach HIGH",
+      four["go_to_market_confidence"] == "high"
+      and four["go_to_market_evidence"]["direct_signal_count"] >= 3,
+      "%s / %d" % (four["go_to_market_confidence"],
+                   four["go_to_market_evidence"]["direct_signal_count"]))
+check("two signals stay at MEDIUM and keep channel discovery open", (lambda f: (
+      f["go_to_market_confidence"] == "medium" and f["channel_discovery_ready"]))(
+      op.build_profile([ev("https://five.com/", "Sales", official=True, domain="five.com",
+                           text="Five Corp designs and builds custom automated assembly "
+                                "systems and robotic welding cells for automotive "
+                                "manufacturers. Contact our sales team or request a "
+                                "quote.")], "Five Corp", "five.com")))
+
+INTERNAL_PLUS_DIST = [ev("https://six.com/", "Sales", official=True, domain="six.com",
+                         text="Six Corp designs and builds custom automated assembly "
+                              "systems and robotic welding cells for automotive "
+                              "manufacturers. Contact our sales team, or find a "
+                              "distributor in your region.")]
+six = op.build_profile(INTERNAL_PLUS_DIST, "Six Corp", "six.com")
+check("internal sales plus a verified distributor is MIXED",
+      six["go_to_market_model"] == op.MIXED, six["go_to_market_model"])
+check("MIXED never suppresses channel discovery", six["channel_discovery_ready"])
+
+SILENT = [ev("https://seven.com/", "Company", official=True, domain="seven.com",
+             text="Seven Corp designs and builds custom automated assembly systems "
+                  "and robotic welding cells for automotive manufacturers.")]
+seven = op.build_profile(SILENT, "Seven Corp", "seven.com")
+check("silence about channels gives UNKNOWN, not DIRECT",
+      seven["go_to_market_model"] == op.UNKNOWN, seven["go_to_market_model"])
+check("silence does not imply there are no distributors",
+      seven["channel_discovery_ready"], str(seven["channel_skip_reason"]))
+check("and no direct signal was invented",
+      seven["go_to_market_evidence"]["direct_signal_count"] == 0)
+check("a named channel is confident on its own",
+      op.build_profile(DIST, "D", "d.com")["go_to_market_confidence"] in ("medium", "high"))
+check("but a channel model never suppresses channel discovery",
+      op.build_profile(DIST, "D", "d.com")["channel_discovery_ready"]
+      and op.build_profile(REP, "R", "r.com")["channel_discovery_ready"])
+check("field-level confidence agrees with the graded value",
+      all(x["confidence"]["go_to_market"] == x["go_to_market_confidence"]
+          for x in (one, three, six, seven)))
 
 print("\n[6] Every assertion is traceable, and the result is deterministic")
 check("offerings carry their sources",

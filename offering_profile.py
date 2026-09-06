@@ -70,21 +70,63 @@ _SELLS = (r"design(?:s|ed|ing)?|build(?:s|ing)?|manufactur\w*|produc(?:e|es|ed|i
 _USES = (r"uses?|using|used|deploy\w*|install\w*|operat\w*|adopt\w*|"
          r"supplier of the year|supplier to|supplies to|awarded by")
 
-_GTM_CUES = {
-    # DIRECT requires evidence about HOW the company SELLS, not what it sells.
-    # An earlier version accepted product-line language - "Custom Automated
-    # Equipment" - as proof of direct selling. It is not: it proves the offering
-    # is engineered-to-order, and engineered-to-order products are routinely sold
-    # through representatives. The two questions are independent.
-    DIRECT: (r"request a quote|contact (?:our|the) sales(?: team)?|our sales team|"
-             r"account (?:executive|manager)s?|direct sales|sold directly|"
-             r"we sell directly|contract directly with|our sales engineers|"
-             r"直销|直接销售|直接签约"),
-    DISTRIBUTOR_LED: (r"authoriz(?:ed|sed) distributor|find a distributor|distributor "
-                      r"network|dealer locator|our distributors|经销商|分销商|代理商"),
-    REPRESENTATIVE_LED: (r"manufacturers'? representative|sales representative network|"
-                         r"rep(?:resentative)? network|our reps\b|代表处"),
-}
+# Go-to-market signals, NAMED and GRADED.
+#
+# The distinction that matters for gating: a company having a sales team is
+# evidence of a direct sales MOTION. It is not evidence that no channel exists.
+# Almost every distributor-led manufacturer also has an internal sales team, a
+# quote form and account managers. Treating any one of those as proof of
+# exclusivity is the same absence-reasoning error the earlier version made from
+# the other direction, and it would silently switch channel discovery off for
+# exactly the accounts worth searching.
+#
+# So each cue carries a strength. EXPLICIT means the company states how it goes
+# to market. SUPPORTING means the company has a direct sales capability, which
+# is compatible with any channel model.
+EXPLICIT, SUPPORTING = "explicit", "supporting"
+
+_DIRECT_SIGNALS = OrderedDict([
+    ("explicit direct-sales statement",
+     (EXPLICIT, r"we sell directly|sells? direct(?:ly)|sold directly|"
+                r"direct[- ]sales (?:model|organi[sz]ation|only|force)|"
+                r"only through our own sales|no distributors|without (?:a )?distributors?|"
+                r"直销|直接销售|直接签约")),
+    ("direct project contracting",
+     (SUPPORTING, r"contract(?:s|ed|ing)? directly with|we contract directly")),
+    ("internal sales team",
+     (SUPPORTING, r"our sales team|contact (?:our|the) sales(?: team)?|"
+                  r"our (?:in-house|internal) sales|our sales (?:department|organi[sz]ation)")),
+    ("named sales owners",
+     (SUPPORTING, r"account (?:executive|manager)s?|our sales engineers?|"
+                  r"your sales engineer")),
+    ("direct quote workflow",
+     (SUPPORTING, r"request a (?:quote|proposal)|get a quote|submit an rfq|询价")),
+])
+
+_DISTRIBUTOR_SIGNALS = OrderedDict([
+    ("distributor network",
+     (EXPLICIT, r"authoriz(?:ed|sed) distributor|find a distributor|distributor network|"
+                r"dealer locator|our distributors|经销商|分销商|代理商")),
+])
+
+_REP_SIGNALS = OrderedDict([
+    ("representative network",
+     (EXPLICIT, r"manufacturers'? representative|sales representative network|"
+                r"rep(?:resentative)? network|our reps\b|代表处")),
+])
+
+_GTM_SIGNALS = OrderedDict([
+    (DIRECT, _DIRECT_SIGNALS),
+    (DISTRIBUTOR_LED, _DISTRIBUTOR_SIGNALS),
+    (REPRESENTATIVE_LED, _REP_SIGNALS),
+])
+
+# Kept as a flat model -> pattern view for callers that only need "does any cue
+# for this model appear". Derived, so the two can never drift apart.
+_GTM_CUES = OrderedDict(
+    (model, "|".join(pat for _s, pat in sigs.values()))
+    for model, sigs in _GTM_SIGNALS.items())
+
 
 # Street suffixes are not places. They appear because a company's contact page
 # puts the address immediately above the city.
@@ -141,7 +183,7 @@ def build_profile(evidence, name, domain="", aliases=()):
 
     offerings, capabilities, industries, geography = OrderedDict(), OrderedDict(), OrderedDict(), OrderedDict()
     usage = OrderedDict()                     # what the account USES - kept apart
-    gtm_hits = {k: [] for k in _GTM_CUES}
+    gtm_hits = {k: OrderedDict() for k in _GTM_SIGNALS}
     own_pages = 0
 
     for item in ev:
@@ -193,11 +235,14 @@ def build_profile(evidence, name, domain="", aliases=()):
             place = _clean_place(m.group(1))
             if own and place:
                 geography.setdefault(place, []).append(url)
-        for model, pat in _GTM_CUES.items():
-            # Title as well as body: a company's product line is usually its page
-            # title, and that is where "Custom Automated Equipment" lives.
-            if own and re.search(pat, (title + " " + text[:20000]), re.I):
-                gtm_hits[model].append(url)
+        if own:
+            hay = title + " " + text[:20000]
+            for model, sigs in _GTM_SIGNALS.items():
+                for signal, (strength, pat) in sigs.items():
+                    if re.search(pat, hay, re.I):
+                        gtm_hits[model].setdefault(signal, {"strength": strength,
+                                                            "urls": []})
+                        gtm_hits[model][signal]["urls"].append(url)
 
     # Capabilities the account only USES are never offerings.
     for k in list(capabilities):
@@ -205,7 +250,7 @@ def build_profile(evidence, name, domain="", aliases=()):
             capabilities.pop(k)
 
     business_model, bm_ev = _business_model(offerings, capabilities, usage, own_pages)
-    gtm, gtm_ev = _go_to_market(gtm_hits)
+    gtm, gtm_conf, gtm_ev = _go_to_market(gtm_hits)
 
     prof = {
         "account": name,
@@ -216,6 +261,8 @@ def build_profile(evidence, name, domain="", aliases=()):
         "geography": list(geography),
         "business_model": business_model,
         "go_to_market_model": gtm,
+        "go_to_market_confidence": gtm_conf,
+        "go_to_market_evidence": gtm_ev,
         "uses_not_sells": list(usage),
         "supporting_evidence": {
             "offerings": {k: sorted(set(v)) for k, v in offerings.items()},
@@ -223,7 +270,9 @@ def build_profile(evidence, name, domain="", aliases=()):
             "industries": {k: sorted(set(v)) for k, v in industries.items()},
             "geography": {k: sorted(set(v)) for k, v in geography.items()},
             "business_model": bm_ev,
-            "go_to_market_model": gtm_ev,
+            "go_to_market_model": {m: sorted({u for sig in sigs.values()
+                                                for u in sig["urls"]})
+                                   for m, sigs in gtm_hits.items() if sigs},
             "usage": {k: sorted(set(v)) for k, v in usage.items()},
         },
         "own_site_pages": own_pages,
@@ -267,16 +316,50 @@ def _business_model(offerings, capabilities, usage, own_pages):
 
 
 def _go_to_market(hits):
-    """Constrained taxonomy. DIRECT is a POSITIVE finding, never the residue of
-    finding no distributor - that would turn every blocked website into a
-    direct-sales business."""
-    present = [m for m, urls in hits.items() if urls]
-    ev = {m: sorted(set(u)) for m, u in hits.items() if u}
+    """Constrained taxonomy plus an explicit confidence, because the model alone
+    cannot carry the difference between "states it sells direct" and "has a sales
+    team like everybody else".
+
+    DIRECT stays a POSITIVE finding - never the residue of finding no
+    distributor, which would turn every blocked website into a direct-sales
+    business. Confidence is what decides whether it is allowed to close down
+    channel discovery, and only an explicit statement or several independent
+    signals reach that bar.
+    """
+    present = [m for m, sigs in hits.items() if sigs]
+    signals = []
+    for model, sigs in hits.items():
+        for name, rec in sigs.items():
+            signals.append({"model": model, "signal": name,
+                            "strength": rec["strength"],
+                            "urls": sorted(set(rec["urls"]))})
+    direct = hits.get(DIRECT) or {}
+    explicit_direct = any(r["strength"] == EXPLICIT for r in direct.values())
+    ev = {"signals": signals,
+          "direct_signal_count": len(direct),
+          "explicit_direct_statement": explicit_direct,
+          "channel_signal_count": len(hits.get(DISTRIBUTOR_LED) or {})
+                                  + len(hits.get(REPRESENTATIVE_LED) or {})}
+
     if len(present) > 1:
-        return MIXED, ev
-    if present:
-        return present[0], ev
-    return UNKNOWN, ev
+        # Both motions are evidenced. That is a finding, not a doubt, but it
+        # never suppresses channel discovery - there IS a channel.
+        return MIXED, "medium", ev
+    if not present:
+        return UNKNOWN, "none", ev
+
+    model = present[0]
+    if model != DIRECT:
+        # A named channel is a positive, checkable fact about the outside world.
+        urls = {u for r in hits[model].values() for u in r["urls"]}
+        return model, ("high" if len(urls) >= 2 else "medium"), ev
+
+    # DIRECT. One statement of how they sell is worth more than any number of
+    # signals that they can sell.
+    if explicit_direct:
+        return DIRECT, "high", ev
+    n = len(direct)
+    return DIRECT, ("high" if n >= 3 else "medium" if n == 2 else "low"), ev
 
 
 def _score(n, strong=3):
@@ -297,8 +380,8 @@ def _confidence(p):
         "geography": _score(len(p["geography"]), strong=2),
         "business_model": ("high" if p["business_model"] not in ("unknown", "unclassified_seller")
                            else "low" if p["business_model"] == "unclassified_seller" else "none"),
-        "go_to_market": ("high" if p["go_to_market_model"] not in (UNKNOWN, MIXED)
-                         else "medium" if p["go_to_market_model"] == MIXED else "none"),
+        # One source of truth: the graded value computed with the model.
+        "go_to_market": p["go_to_market_confidence"],
     }
 
 
@@ -336,8 +419,16 @@ def _readiness(p):
     if c["offerings"] not in _OK and c["capabilities"] not in _OK:
         chan_missing.append("offerings_or_capabilities")
 
-    if gtm == DIRECT:
-        chan_ready, chan_reason = False, "go-to-market verified as DIRECT; no channel to discover"
+    # Only a STRONGLY corroborated DIRECT model may close this path. A single
+    # supporting cue - a sales team, a quote form - says the account can sell
+    # direct, not that it sells ONLY direct, and the cost of being wrong is
+    # silently never looking for a channel that exists.
+    if gtm == DIRECT and p["go_to_market_confidence"] == "high":
+        chan_ready, chan_reason = False, (
+            "go-to-market corroborated as DIRECT (%s); no channel to discover"
+            % ("explicit statement" if p["go_to_market_evidence"]["explicit_direct_statement"]
+               else "%d independent direct-sales signals"
+                    % p["go_to_market_evidence"]["direct_signal_count"]))
     elif chan_missing:
         chan_ready, chan_reason = False, (
             "insufficient account understanding to search intelligently: "
