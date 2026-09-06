@@ -28,6 +28,7 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import app                                                        # noqa: E402
 import job_store as js                                            # noqa: E402
 
 PASS, FAIL, SKIP = [], [], []
@@ -429,6 +430,29 @@ check("the error tells the operator who owns the schema",
 CRM_DB = os.path.join(os.path.dirname(HERE), "..", "..")
 check("the CRM is the one that creates them", True,
       "asserted in the CRM suite; the engine only verifies")
+
+print("\n[4c] The enqueue key comes from the CRM, never from the engine")
+check("the engine has no normaliser of its own",
+      "def company_key(" not in APP_SRC,
+      "two normalisations diverged and every company-keyed lookup broke")
+check("it takes the key the request carries", "def enqueue_key(body)" in APP_SRC)
+check("a supplied key is used verbatim",
+      app.enqueue_key({"company": "ACRO Automation Systems",
+                       "company_key": "acro automation systems"})
+      == "acro automation systems")
+check("a multi-word name is not re-normalised",
+      " " in app.enqueue_key({"company": "X", "company_key": "acro automation systems"}),
+      "the spacing the CRM chose survives")
+check("a legal suffix is not re-stripped",
+      app.enqueue_key({"company": "Comau LLC", "company_key": "comau"}) == "comau")
+check("CJK survives", app.enqueue_key({"company": "红旗", "company_key": "红旗"}) == "红旗")
+check("the fallback is only for a direct call with no CRM",
+      app.enqueue_key({"company": "ACRO Automation Systems"})
+      == "acro automation systems",
+      "trivial by design; it never imitates the CRM's suffix stripping")
+check("an empty request yields an empty key rather than a guess",
+      app.enqueue_key({}) == "")
+check("the enqueue uses it", "enqueue_key(body)" in APP_SRC)
 
 print("\n[5] The web process owns no research")
 APP = io.open(os.path.join(HERE, "app.py"), encoding="utf-8").read()

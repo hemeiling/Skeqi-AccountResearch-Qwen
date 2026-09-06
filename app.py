@@ -59,11 +59,25 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 
 
-def company_key(name):
-    """The identity key the duplicate index is built on. Deliberately the same
-    normalisation the CRM uses, so one live job per company means the same thing
-    on both sides of the callback."""
-    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (name or "").lower())
+def enqueue_key(body):
+    """The identity key for the durable row, supplied by the CRM.
+
+    It is NOT computed here. This function used to normalise the company name
+    itself, and the two normalisations diverged: the CRM strips legal suffixes
+    and keeps word spacing, this stripped every non-alphanumeric character, and
+    "ACRO Automation Systems" became two different keys. Every company-keyed
+    lookup then stopped finding the newer job - the company table, Existing
+    Report, the duplicate guard and the report upsert all read stale rows.
+
+    One normaliser owns this, and it is the CRM's, because that key is the join
+    surface for every existing report and for companies.name_key. The fallback
+    below exists only for a direct call to this engine with no CRM in front of
+    it; it is deliberately trivial and never pretends to be the CRM's key.
+    """
+    supplied = (body.get("company_key") or "").strip()
+    if supplied:
+        return supplied
+    return (body.get("company") or "").strip().lower()
 
 
 def slugify(text, limit=40):
@@ -886,7 +900,7 @@ def api_research():
     job_id = uuid.uuid4().hex
     try:
         js.JobStore().enqueue(
-            job_id, company_key(company), company, website,
+            job_id, enqueue_key(body), company, website,
             models[0] if len(models) == 1 else "all",
             {"company": company, "website": website, "models": models,
              "use_cache": use_cache, "force": force,
