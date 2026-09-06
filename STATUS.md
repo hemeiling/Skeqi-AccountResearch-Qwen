@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: P0 synthesis payload budget done; engine deploy pending (fix rides with it)
+> Current phase: Discovery simplified to GenAI + Tavily; deploy pending
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -791,6 +791,103 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 3. Engine auto-deploy on Render is unreliable; always confirm `/healthz`.
 4. Language purity, placeholder asymmetry and the bilingual report architecture
    (§0i) remain open.
+
+---
+
+## Architecture — GenAI decides semantics (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+
+**The principle, and it governs future work on these sections:**
+
+> GenAI decides semantics. Tavily acquires evidence. Deterministic code provides
+> guardrails only.
+
+### Why
+
+Three deterministic engines answered "who competes with this account" and "who
+distributes for it": a capability lexicon deciding what a company sells, an
+overlap scorer deciding who competed, and a role-regex table deciding who
+distributed. The AMADA WELD TECH production run showed what that produces:
+eighteen competitors, six of them AMADA itself, several of them news headlines,
+one matched on the word "Terms" lifted from a terms-and-conditions page.
+
+Adding more classifiers would have made a fourth engine. The semantics went to
+the model instead.
+
+### The flow
+
+```
+GenAI pass 1 (planning, never published)
+        |
+   named candidates?
+   yes -> targeted queries:  "{target}" "{candidate}" competitor OR alternative
+   no  -> generic queries:   "{target}" competitors / alternatives
+        |
+   Tavily search (<=4) -> fetch pages (<=8)
+        |
+GenAI pass 2 (answers from the numbered evidence only)
+        |
+   guardrails -> published rows, each citing its sources
+```
+
+Two model calls and at most four searches per kind. Nothing factual is published
+from model memory: pass one is a research plan, and only pass two, which sees
+fetched pages and may cite only those, produces rows.
+
+### The adjudication that carries the most weight
+
+Each row returns a verdict on its own citation:
+`evidence_supports_competition` for competitors, `evidence_supports_relationship`
+for channel. A row publishes only when that is **clearly true** - the boolean, or
+the string "true". Missing, null, false, "unclear", "partial", "likely" all omit
+the row. Co-mention is explicitly not enough, and both prompts list the roles
+that are not the relationship in question unless the evidence says otherwise.
+
+### Remaining deterministic guardrails, and there are only seven
+
+| Guardrail | What it refuses |
+|---|---|
+| schema | a row without a name or with a classification outside the enum |
+| self/alias exclusion | the account, its parent, its regional entities |
+| placeholder rejection | "Undisclosed", "Directory of ...", page titles, headlines |
+| duplicate suppression | the same organisation twice, by normalised key |
+| evidence-ID validation | a citation that is missing or outside the evidence set |
+| adjudication | a verdict short of clearly true |
+| budgets | more than 4 searches, 8 fetches or 2 model calls per kind |
+
+None of them decides whether a company is a competitor or a distributor.
+
+### Deleted
+
+`competitor_discovery.py` (286), `channel_discovery.py` (279),
+`offering_profile.py` (500), both page verifiers and both merge helpers in
+`research_service.py` (297), and four test suites (1,299). Replaced by
+`genai_discovery.py` (473) and one suite. **Net reduction: 1,881 lines.**
+
+The offering profile went too, deliberately: it was a second deterministic
+business-semantics engine, and its job is now part of the planning prompt.
+
+### Manifest
+
+Both discovery blocks now report what the guardrails refused:
+`dropped_self`, `dropped_placeholder`, `dropped_uncited`, `dropped_unsupported`,
+`dropped_duplicate`, `dropped_schema`, alongside `model_calls`, `searches`,
+`targeted_queries`, `candidates_named`, `pages_fetched`, `sources_offered`,
+`rows_proposed` and the published counts.
+
+### Fixture results
+
+| Fixture | Proposed | Published | Refused |
+|---|---|---|---|
+| AMADA competitors | 9 | 2 | 3 self, 2 placeholder, 1 uncited, 1 unsupported |
+| AMADA channel | 0 | 0 | - |
+| Torus competitors | 2 | 1 | 1 placeholder |
+| Torus channel, similar name | 1 | 0 | 1 unsupported |
+
+The last row is the case worth keeping: a page states a distributor for "Torus
+Technology GmbH", a different company whose name resembles the account. The model
+returns the verdict false and the row never publishes. The same page publishes
+when the model ties the relationship to the target, which is the division of
+labour working as intended.
 
 ---
 
@@ -2054,7 +2151,10 @@ The three models build one shared evidence package. They do not produce three re
 
 ## 14. What Was Just Completed
 
-**The synthesis payload budget closes the P0 that AMADA exposed.** Before it,
+**Competitor and channel discovery are now GenAI plus Tavily, with code as
+guardrails only.** The three deterministic engines are deleted; see the
+architecture section above. Before that, the synthesis payload budget closed the
+P0 that AMADA exposed. Before it,
 the redefinition work was complete and audited. None of it is deployed. The
 payload fix ships WITH the competitor and channel work rather than after it, so
 the known 413 behaviour is never exposed in production.
@@ -2152,9 +2252,10 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-The synthesis payload budget is implemented and tested locally. Nothing deployed,
-no paid model call made. The engine still needs a manual Render deploy, and this
-fix must go out in the same deployment as the competitor and channel work.
+Discovery is now GenAI plus Tavily with code as guardrails only, tested against
+stored AMADA and Torus fixtures. Committed and pushed, NOT deployed, and no paid
+model call has exercised the new prompts. The engine needs a manual Render
+deploy, and everything since `55f6ffe` goes out together.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both

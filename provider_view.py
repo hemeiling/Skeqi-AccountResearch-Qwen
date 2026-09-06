@@ -111,12 +111,12 @@ NOT_SEARCHED_COMPETITOR = "{}\n{}".format(NOT_SEARCHED_COMPETITOR_EN,
                                           NOT_SEARCHED_COMPETITOR_ZH)
 
 
-def competitor_prompt_block(competitors, profile=None):
+def competitor_prompt_block(competitors, coverage=None):
     """Verified competitors as FACTS. The model describes them; it does not add
     to them, and an empty set stays empty."""
     rows = [c for c in (competitors or []) if c.get("organization_name")]
     if not rows:
-        why = (profile or {}).get("competitor_skip_reason")
+        why = (coverage or {}).get("skip_reason")
         head = "\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手\n"
         tail = ("Do NOT supply competitor names from general knowledge, and do NOT "
                 "list the account's own suppliers, partners or customers as "
@@ -172,16 +172,18 @@ _GTM_LABEL = {
 }
 
 
-def channel_prompt_block(channels, profile=None):
+def channel_prompt_block(channels, coverage=None):
     """Go-to-market and verified channel entities as FACTS.
 
     The confidence travels with the model on purpose. "Direct" asserted from one
     sales-team mention is a different claim from "direct" asserted from an
     explicit statement, and the report must not present them identically.
     """
-    prof = profile or {}
+    prof = coverage or {}
     model = prof.get("go_to_market_model") or "UNKNOWN"
-    conf = prof.get("go_to_market_confidence") or "none"
+    # The model states the go-to-market it can support from evidence; there is
+    # no separate classifier to disagree with it any more.
+    conf = "evidence-based" if prof.get("rows_published") else "not established"
     rows = [c for c in (channels or []) if c.get("organization_name")]
     reps = [c for c in rows if c.get("is_representation")]
     partners = [c for c in rows if not c.get("is_representation")]
@@ -189,12 +191,12 @@ def channel_prompt_block(channels, profile=None):
     lines = ["\n\n---\n\nGO-TO-MARKET AND VERIFIED CHANNEL / 销售模式与已核实渠道",
              "Go-to-market model: {} (confidence: {})".format(
                  _GTM_LABEL.get(model, model), conf)]
-    if conf in ("low", "medium", "none"):
+    if not prof.get("rows_published"):
         lines.append("This model is NOT firmly established. Say so; do not present "
                      "it as settled, and do not state that the account has no "
                      "channel merely because none was found.")
     if not reps:
-        why = prof.get("channel_skip_reason")
+        why = prof.get("skip_reason")
         if why:
             lines += ["Discovery status: NOT PERFORMED.",
                       "Reason: " + why,

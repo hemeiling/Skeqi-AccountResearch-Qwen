@@ -27,9 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import channel_discovery as chdisc
-import competitor_discovery as cdisc
-import offering_profile as op
+import genai_discovery as gdisc
 import synthesis_payload as sp
 import tavily_service as tv
 import zlib
@@ -1073,6 +1071,48 @@ def run_search(query, cfg, timeout, model=None, usage_sink=None):
     return status, [r for r in results if r.get("url")]
 
 
+ASK_MAX_TOKENS = 1600
+
+
+def ask_model(prompt, cfg, model=None, usage_sink=None, timeout=None):
+    """One question to the model, no web search, answer returned as text.
+
+    The same call shape retrieval already uses, minus enable_search: this is
+    reasoning, not retrieval. Tokens are recorded like every other call, because
+    a reasoning call costs exactly as much as any other one.
+    """
+    model = model or cfg.get("AI_MODEL_FAST", "deepseek-v4-flash-0731")
+    timeout = timeout or int(cfg.get("AI_REQUEST_TIMEOUT_MS", "90000")) / 1000
+    path, is_multi = endpoint_for(model, cfg)
+    url = cfg["DASHSCOPE_BASE_URL"].rstrip("/") + path
+    params = {"max_tokens": ASK_MAX_TOKENS}
+    if not is_multi:
+        params["result_format"] = "message"
+    content = [{"text": prompt}] if is_multi else prompt
+
+    def _post():
+        return post_json(url, {
+            "model": model,
+            "input": {"messages": [{"role": "user", "content": content}]},
+            "parameters": params,
+        }, cfg["DASHSCOPE_API_KEY"], timeout)
+
+    status, data = _post()
+    if wrong_endpoint(status, data):
+        learn_endpoint(model, is_multi)
+        path, is_multi = endpoint_for(model, cfg)
+        url = cfg["DASHSCOPE_BASE_URL"].rstrip("/") + path
+        content = [{"text": prompt}] if is_multi else prompt
+        status, data = _post()
+    record_access(model, status, data)
+    if usage_sink is not None:
+        usage_sink.append(dict(usage_of(data, model), kind="retrieval", status=status))
+    msg = ((data.get("output") or {}).get("choices") or [{}])[0].get("message", {})
+    body = msg.get("content", "")
+    return body if isinstance(body, str) else "".join(
+        p.get("text", "") for p in body or [])
+
+
 def classify(url, domain):
     host = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
     path = urllib.parse.urlparse(url).path.lower()
@@ -1741,261 +1781,10 @@ def _candidate_org_name(url, title, text):
     return ""
 
 
-def competitor_verifier(profile, name, name_cn, aliases, sink):
-    """The gate a competitor candidate must pass. BOTH sides are verified.
-
-    Provider discovery asks "is this page about the ACCOUNT". That question is
-    wrong here: a competitor's page is about the COMPETITOR and will rarely
-    mention the account at all. So this verifies the candidate's own identity,
-    then scores competitive overlap against the account's offering profile, and
-    admits nothing on industry membership alone.
-
-    A snippet is never evidence. Pages are fetched first, exactly as everywhere
-    else in the pipeline.
-    """
-    import competitor_discovery as cdisc
-
-    def verify(candidates, intent_key):
-        out = {"verified": 0, "competitors": 0, "direct": 0, "partial": 0,
-               "adjacent": 0, "rejected_same_industry": 0, "fetched": 0,
-               "evidence": []}
-        if not candidates:
-            return out
-
-        def grab(c):
-            try:
-                text, method = fetch_page_text(c["url"])
-            except Exception:
-                text, method = "", "error"
-            return dict(c, text=text or "", method=method)
-
-        fetched = [f for f in parallel_map(grab, candidates, FETCH_CONCURRENCY,
-                                           deadline=EVIDENCE_STAGE_DEADLINE,
-                                           fallback=None) if f]
-        for f in fetched:
-            body = f["text"]
-            if not body or not _plausible_host(f["url"]):
-                continue
-            out["fetched"] += 1
-            org = _candidate_org_name(f["url"], f.get("title") or "", body)
-            if not org:
-                continue                       # cannot name it -> cannot list it
-            # The candidate must not be the account itself. It MAY be one of the
-            # account's own providers: supplying an account and competing with it
-            # are independent relationships, and a company that does both is
-            # recorded under both rather than removed from one.
-            if _mentions(name, org) or (name_cn and name_cn in org) \
-                    or any(a and _mentions(a, org) for a in (aliases or [])):
-                continue
-            out["verified"] += 1
-            dims = cdisc.score_overlap(body, profile, name, aliases)
-            klass = cdisc.classify(dims)
-            if klass is cdisc.NOT_A_COMPETITOR:
-                if dims.get("customer_or_industry_overlap"):
-                    out["rejected_same_industry"] += 1
-                continue
-            out["competitors"] += 1
-            out[klass.lower()] += 1
-            rationale = "; ".join(filter(None, [
-                ("offerings: " + ", ".join(dims["offering_matches"])) if dims["offering_matches"] else "",
-                ("industries: " + ", ".join(dims["industry_matches"])) if dims["industry_matches"] else "",
-                ("geography: " + ", ".join(dims["geography_matches"])) if dims["geography_matches"] else "",
-            ])) or "offering overlap"
-            row = {
-                "organization_name": org,
-                "organization_key": normalize_org_key(org),
-                "competition_type": klass,
-                "offering_overlap": dims["offering_overlap"],
-                "customer_or_industry_overlap": dims["customer_or_industry_overlap"],
-                "geographic_or_market_overlap": dims["geographic_or_market_overlap"],
-                "competitive_rationale": rationale,
-                "source_urls": [f["url"]],
-                "source_domains": [registrable_domain(f["url"])],
-                # Provenance stays a SEPARATE dimension: a competitor may also be
-                # a provider, and one classification must not overwrite the other.
-                "provenance": PROV_MARKET,
-                "confidence": ("high" if klass == cdisc.DIRECT
-                               else "medium" if klass == cdisc.PARTIAL else "low"),
-                "discovered_by": "tavily",
-                "intent": intent_key,
-            }
-            _merge_competitor(sink, row)
-            out["evidence"].append({
-                "url": f["url"], "title": f.get("title") or org,
-                "domain": registrable_domain(f["url"]),
-                # Bounded like every other evidence path; verification above
-                # read the whole page.
-                "text": body[:CHAR_BUDGET.get(5, 900)],
-                "tier": 5, "source_type": "competitor-page",
-                "official": False, "hits": 1, "topics": [intent_key],
-                "provenance": PROV_MARKET, "content_verified": True,
-                "discovered_by": "tavily", "competitor": org,
-            })
-        return out
-
-    def tally():
-        """Absolute and deduplicated. The sink is the only place an organisation
-        exists exactly once, so breadth is counted there rather than from page
-        hits: one rival found on three domains is one competitor."""
-        return {"contribution_count": len(sink),
-                "direct": sum(1 for c in sink if c["competition_type"] == cdisc.DIRECT),
-                "partial": sum(1 for c in sink if c["competition_type"] == cdisc.PARTIAL),
-                "adjacent": sum(1 for c in sink if c["competition_type"] == cdisc.ADJACENT)}
-
-    verify.tally = tally
-    return verify
-
-
-def channel_verifier(profile, name, name_cn, aliases, sink):
-    """The gate a channel candidate must pass.
-
-    Mirror image of the competitor gate. There, the page is about the candidate
-    and need not mention the account. Here it MUST: a distributor page exists to
-    say whose products it carries, so a page that never names the account cannot
-    be evidence of representation.
-
-    Representation must be STATED. Integrating an account's equipment, partnering
-    with it or servicing it are real relationships, and they are recorded as such,
-    but they are not representation and must never be promoted into it.
-    """
-    def verify(candidates, intent_key):
-        out = {"verified": 0, "channel_entities": 0, "authorized": 0, "partners": 0,
-               "rejected_no_representation": 0, "fetched": 0, "evidence": []}
-        if not candidates:
-            return out
-
-        def grab(c):
-            try:
-                text, method = fetch_page_text(c["url"])
-            except Exception:
-                text, method = "", "error"
-            return dict(c, text=text or "", method=method)
-
-        fetched = [f for f in parallel_map(grab, candidates, FETCH_CONCURRENCY,
-                                           deadline=EVIDENCE_STAGE_DEADLINE,
-                                           fallback=None) if f]
-        for f in fetched:
-            body = f["text"]
-            if not body or not _plausible_host(f["url"]):
-                continue
-            out["fetched"] += 1
-            org = _candidate_org_name(f["url"], f.get("title") or "", body)
-            if not org:
-                continue                       # cannot name it -> cannot list it
-            # The account's own site listing its own distributors is fine, but the
-            # account is not its own channel.
-            if _mentions(name, org) or (name_cn and name_cn in org) \
-                    or any(a and _mentions(a, org) for a in (aliases or [])):
-                continue
-            out["verified"] += 1
-            role, authorized, territory, quote = chdisc.classify_role(
-                body, name, name_cn, aliases)
-            if role == chdisc.NOT_A_CHANNEL:
-                out["rejected_no_representation"] += 1
-                continue
-            is_channel = role in chdisc.CHANNEL_ROLES
-            if is_channel:
-                out["channel_entities"] += 1
-                if authorized:
-                    out["authorized"] += 1
-            else:
-                out["partners"] += 1
-            row = {
-                "organization_name": org,
-                "organization_key": normalize_org_key(org),
-                "role": role,
-                "is_representation": is_channel,
-                "authorized": bool(authorized),
-                "territory": territory,
-                "evidence_quote": quote,
-                "source_urls": [f["url"]],
-                "source_domains": [registrable_domain(f["url"])],
-                # A distributor sits in the account's ecosystem. Provenance stays
-                # its own dimension and never doubles as the role.
-                "provenance": PROV_ECOSYSTEM,
-                "confidence": ("high" if authorized and is_channel
-                               else "medium" if is_channel else "low"),
-                "discovered_by": "tavily",
-                "intent": intent_key,
-            }
-            _merge_channel(sink, row)
-            out["evidence"].append({
-                "url": f["url"], "title": f.get("title") or org,
-                "domain": registrable_domain(f["url"]),
-                "text": body[:CHAR_BUDGET.get(5, 900)],
-                "tier": 5, "source_type": "channel-page",
-                "official": False, "hits": 1, "topics": [intent_key],
-                "provenance": PROV_ECOSYSTEM, "content_verified": True,
-                "discovered_by": "tavily", "channel": org,
-            })
-        return out
-
-    def tally():
-        """Distinct organisations. Two sources for the same distributor make it
-        better evidenced, not twice as broad."""
-        reps = [c for c in sink if c["is_representation"]]
-        return {"channel_entities": len(reps),
-                "authorized": sum(1 for c in reps if c["authorized"]),
-                "partners": len(sink) - len(reps)}
-
-    verify.tally = tally
-    return verify
-
-
-# Representation outranks partnership: if one page says a company distributes for
-# the account and another only calls it a partner, it is a distributor.
-_ROLE_RANK = {chdisc.SERVICE_PARTNER: 0, chdisc.TECHNOLOGY_PARTNER: 1,
-              chdisc.SYSTEM_INTEGRATOR: 2, chdisc.RESELLER: 3,
-              chdisc.REPRESENTATIVE: 4, chdisc.DISTRIBUTOR: 5,
-              chdisc.AUTHORIZED_DISTRIBUTOR: 6}
-
-
-def _merge_channel(sink, row):
-    for existing in sink:
-        if existing["organization_key"] != row["organization_key"]:
-            continue
-        for k in ("source_urls", "source_domains"):
-            existing[k] = sorted(set(existing[k]) | set(row[k]))
-        if _ROLE_RANK.get(row["role"], -1) > _ROLE_RANK.get(existing["role"], -1):
-            for k in ("role", "is_representation", "authorized", "territory",
-                      "evidence_quote", "confidence"):
-                existing[k] = row[k]
-        else:
-            existing["territory"] = existing.get("territory") or row.get("territory")
-            existing["authorized"] = existing["authorized"] or row["authorized"]
-        return
-    sink.append(row)
-
-
 def normalize_org_key(org):
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (org or "").lower())
 
 
-def _merge_competitor(sink, row):
-    """One row per organisation. A replayed or repeated candidate merges its
-    sources instead of appending a duplicate."""
-    for existing in sink:
-        if existing["organization_key"] == row["organization_key"]:
-            for k in ("source_urls", "source_domains"):
-                existing[k] = sorted(set(existing[k]) | set(row[k]))
-            # Keep the strongest classification seen.
-            order = {"ADJACENT": 0, "PARTIAL": 1, "DIRECT": 2}
-            if order.get(row["competition_type"], 0) > order.get(existing["competition_type"], 0):
-                existing["competition_type"] = row["competition_type"]
-                existing["competitive_rationale"] = row["competitive_rationale"]
-                existing["confidence"] = row["confidence"]
-            return
-    sink.append(row)
-
-
-# ---------------------------------------------------------------------------
-# Named organisations
-# ---------------------------------------------------------------------------
-# The Company column must hold an ORGANISATION. Measured on the Tavily corpora,
-# the failure mode is not a wrong company - it is a category phrase promoted into
-# the company column: "MES provider", "Systems Integrators", "Warehouse
-# Management System", 通用焊接/MES厂商, 生态伙伴. Those are useful concepts and
-# they belong in their own field, never in a row that reads as a supplier.
 _ORG_SUFFIX_EN = (
     "robotics", "robot", "automation", "systems", "system", "technologies",
     "technology", "engineering", "industries", "industrial", "solutions",
@@ -2963,7 +2752,8 @@ A short honest report is the correct output here. Do not pad it.
 
 def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT,
                apollo_people=None, on_section=None, providers=None, aliases=(),
-               competitors=None, profile=None, channels=None, emergency=False):
+               competitors=None, channels=None, comp_coverage=None,
+               chan_coverage=None, emergency=False):
     """Search is OFF here on purpose: synthesis is closed-book over the evidence set.
 
     apollo_people, when supplied, is appended as a clearly separated directory
@@ -2984,8 +2774,8 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
     if block:
         tail += "\n\n---\n\n" + block
     tail += pv.provider_prompt_block(providers, company)
-    tail += pv.competitor_prompt_block(competitors, profile)
-    tail += pv.channel_prompt_block(channels, profile)
+    tail += pv.competitor_prompt_block(competitors, comp_coverage)
+    tail += pv.channel_prompt_block(channels, chan_coverage)
 
     def assemble(items):
         # ZERO-GROUNDING MODE. Derived from the evidence set itself so it can
@@ -3135,7 +2925,8 @@ def synthesize(model, company, website, evidence, cfg, timeout=SYNTHESIS_TIMEOUT
 def synthesize_with_fallback(model, company, website, evidence, cfg,
                              timeout=SYNTHESIS_TIMEOUT, apollo_people=None, progress=None,
                              on_section=None, providers=None, aliases=(),
-                             competitors=None, profile=None, channels=None):
+                             competitors=None, channels=None,
+                             comp_coverage=None, chan_coverage=None):
     """Synthesise with the requested model, falling back on access denial.
 
     An unusable model must not become an empty report: the user asked for
@@ -3154,8 +2945,8 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
         run = synthesize(candidate, company, website, evidence, cfg, timeout,
                          apollo_people=apollo_people, on_section=on_section,
                          providers=providers, aliases=aliases,
-                         competitors=competitors, profile=profile,
-                         channels=channels)
+                         competitors=competitors, channels=channels,
+                         comp_coverage=comp_coverage, chan_coverage=chan_coverage)
         attempts.append({"model": candidate, "kind": "synthesis",
                          "status": run.get("status"),
                          "input_tokens": run.get("input_tokens") or 0,
@@ -3171,8 +2962,9 @@ def synthesize_with_fallback(model, company, website, evidence, cfg,
             run = synthesize(candidate, company, website, evidence, cfg, timeout,
                              apollo_people=apollo_people, on_section=on_section,
                              providers=providers, aliases=aliases,
-                             competitors=competitors, profile=profile,
-                             channels=channels, emergency=True)
+                             competitors=competitors,
+                             channels=channels, comp_coverage=comp_coverage,
+                             chan_coverage=chan_coverage, emergency=True)
             attempts.append({"model": candidate, "kind": "synthesis",
                              "status": run.get("status"),
                              "input_tokens": run.get("input_tokens") or 0,
@@ -3791,95 +3583,74 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         evidence, dropped = apply_evidence_caps(site_evidence,
                                                 web_evidence + tavily_evidence)
         timings["general_fallback"] = round(time.time() - t, 1)
-    # ---- the account's offering profile, from RETAINED evidence only ----
-    # Built here, after retention, because that is the first point at which the
-    # evidence set is the one the report will actually stand on.
-    t = time.time()
-    try:
-        profile = op.build_profile(evidence, name, domain, aliases)
-    except Exception as e:
-        # The profile is an ENHANCEMENT. Without it both discovery paths stand
-        # down, and the report is written from the evidence already retained.
-        _log_stage_failure("offering_profile", e)
-        profile = op.unavailable_profile(
-            name, "account profile could not be built ({})".format(type(e).__name__))
-        limitation("profile", "Account profile unavailable ({}); competitor and "
-                              "channel discovery stood down".format(type(e).__name__))
-    timings["offering_profile"] = round(time.time() - t, 1)
-    if not profile.get("unavailable"):
-        progress("profile", "Account profile: {} | sells {} | go-to-market {}".format(
-            profile["business_model"], ", ".join(profile["capabilities"][:3]) or "unclear",
-            profile["go_to_market_model"]))
+    # ---- competitors and channel: the model reasons, Tavily proves ----
+    # Two passes each. The first names candidates and is never published; the
+    # second answers from fetched pages only. A relationship Tavily cannot
+    # verify is omitted, however confident the model was about it.
+    competitors, channels = [], []
+    comp_evidence, chan_evidence = [], []
+    comp_cov = gdisc.empty_coverage(gdisc.COMPETITOR)
+    chan_cov = gdisc.empty_coverage(gdisc.CHANNEL)
 
-    # ---- target-competitor discovery, gated on that profile ----
-    competitors = []
-    comp_evidence = []
-    comp_cov = cdisc.empty_coverage()
-    comp_cov["profile_confidence"] = profile.get("confidence")
-    if client is not None:
+    def _ask(prompt):
+        return ask_model(prompt, cfg, usage_sink=ai_usage)
+
+    def _search(query):
+        return client.search(query)
+
+    for kind, sink, cov_name, stage in ((gdisc.COMPETITOR, competitors, "comp", "competitors"),
+                                        (gdisc.CHANNEL, channels, "chan", "channel")):
+        cov = comp_cov if cov_name == "comp" else chan_cov
+        if client is None:
+            cov["skip_reason"] = "retrieval provider unavailable"
+            continue
         t = time.time()
         try:
-            cverify = competitor_verifier(profile, name, name_cn, aliases, competitors)
-            comp_evidence, comp_cov = cdisc.discover(client, profile, cverify,
-                                                     progress=progress)
+            rows, sources, cov = gdisc.discover(
+                kind, name, aliases, _ask, _search, fetch_page_text, progress=progress)
+            sink.extend(rows)
+            # Pages the model actually cited become ordinary evidence, under the
+            # same per-tier ceiling as everything else.
+            cited = {u for r in rows for u in r.get("source_urls") or []}
+            items = [{"url": src["url"], "title": src["title"] or src["url"],
+                      "domain": registrable_domain(src["url"]),
+                      "text": (src["text"] or "")[:CHAR_BUDGET.get(5, 1600)],
+                      "tier": 5, "source_type": kind + "-page", "official": False,
+                      "hits": 1, "topics": [kind], "provenance": PROV_MARKET,
+                      "content_verified": True, "discovered_by": "genai+tavily"}
+                     for src in sources if src["url"] in cited]
+            if cov_name == "comp":
+                comp_evidence = items
+            else:
+                chan_evidence = items
         except Exception as e:
-            # Whatever this path had already merged into `competitors` is kept:
-            # a crash on the fourth query does not erase the first three.
-            _log_stage_failure("competitor_discovery", e)
-            comp_cov["failed"] = True
-            comp_cov["skip_reason"] = "competitor discovery failed ({})".format(
-                type(e).__name__)
-            limitation("competitors", "Competitor discovery failed ({}); continued "
-                                      "on the evidence already collected"
-                                      .format(type(e).__name__))
-        timings["competitor_discovery"] = round(time.time() - t, 1)
-        if comp_evidence:
-            # Verified competitor pages are real sources and re-enter retention
-            # with everything else. Their SNIPPETS never did.
-            evidence, dropped = apply_evidence_caps(
-                site_evidence, web_evidence + tavily_evidence + comp_evidence)
-    else:
-        comp_cov["skip_reason"] = "retrieval provider unavailable"
+            _log_stage_failure(kind + "_discovery", e)
+            cov["failed"] = True
+            cov["skip_reason"] = "{} discovery failed ({})".format(kind, type(e).__name__)
+            limitation(stage, "{} discovery failed ({}); continued on the evidence "
+                              "already collected".format(kind.capitalize(),
+                                                         type(e).__name__))
+        timings[kind + "_discovery"] = round(time.time() - t, 1)
+        if cov_name == "comp":
+            comp_cov = cov
+        else:
+            chan_cov = cov
+
+    if comp_evidence or chan_evidence:
+        evidence, dropped = apply_evidence_caps(
+            site_evidence,
+            web_evidence + tavily_evidence + comp_evidence + chan_evidence)
+
     if not competitors and comp_cov.get("skip_reason"):
         limitation("competitors", "Competitor discovery skipped - {}"
                                   .format(comp_cov["skip_reason"]))
     elif not competitors:
         limitation("competitors", "No sufficiently verified target-account "
                                   "competitors were identified")
-
-    # ---- channel discovery: who distributes or represents the account ----
-    # Runs unless the account's go-to-market is STRONGLY corroborated as direct.
-    # A sales team is not that corroboration, so "we found no channel" is only
-    # ever said after looking.
-    channels = []
-    chan_cov = chdisc.empty_coverage()
-    chan_cov["go_to_market_model"] = profile.get("go_to_market_model")
-    chan_cov["go_to_market_confidence"] = profile.get("go_to_market_confidence")
-    chan_evidence = []
-    if client is not None:
-        t = time.time()
-        try:
-            hverify = channel_verifier(profile, name, name_cn, aliases, channels)
-            chan_evidence, chan_cov = chdisc.discover(client, profile, name, hverify,
-                                                      name_cn=name_cn, progress=progress)
-        except Exception as e:
-            _log_stage_failure("channel_discovery", e)
-            chan_cov["failed"] = True
-            chan_cov["skip_reason"] = "channel discovery failed ({})".format(
-                type(e).__name__)
-            limitation("channel", "Channel discovery failed ({}); continued on the "
-                                  "evidence already collected".format(type(e).__name__))
-        timings["channel_discovery"] = round(time.time() - t, 1)
-        if chan_evidence:
-            evidence, dropped = apply_evidence_caps(
-                site_evidence,
-                web_evidence + tavily_evidence + comp_evidence + chan_evidence)
-    else:
-        chan_cov["skip_reason"] = "retrieval provider unavailable"
     if not channels and chan_cov.get("skip_reason"):
         limitation("channel", "Channel discovery skipped - {}"
                               .format(chan_cov["skip_reason"]))
-    elif not any(c["is_representation"] for c in channels):
+    elif not channels:
         limitation("channel", "No verified distributors, representatives or "
                               "resellers were identified")
 
@@ -4079,7 +3850,7 @@ def build_shared_evidence(company, website, cfg, progress=None, trust_website=Fa
         "company": company, "website": website, "resolved_alias": name_cn,
         "supplied_website": supplied_domain, "aliases": aliases,
         "providers": providers, "competitors": competitors,
-        "profile": profile, "competitor_coverage": comp_cov,
+        "competitor_coverage": comp_cov,
         "channels": channels, "channel_coverage": chan_cov,
         "tavily_provider": tavily_cov, "tavily_general": general_cov,
         "website_replaced": bool(resolved.get("replaced_supplied")),

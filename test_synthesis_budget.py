@@ -204,10 +204,14 @@ GIANT = "Great Lakes Automation supplies welding systems. " * 30000     # ~1.4 M
 check("the fixture really is over a megabyte", sp.utf8(GIANT) > 1048576,
       "%.1f MB" % (sp.utf8(GIANT) / 1048576.0))
 SRC = io.open(os.path.join(HERE, "research_service.py"), encoding="utf-8").read()
-for fn in ("tavily_verifier", "competitor_verifier", "channel_verifier"):
-    body = SRC[SRC.index("def " + fn):SRC.index("def " + fn) + 5000]
-    check("%s caps the retained text" % fn, "CHAR_BUDGET" in body)
-    check("%s no longer stores the whole page" % fn, '"text": body,' not in body)
+body = SRC[SRC.index("def tavily_verifier"):SRC.index("def tavily_verifier") + 5000]
+check("tavily_verifier caps the retained text", "CHAR_BUDGET" in body)
+check("tavily_verifier no longer stores the whole page", '"text": body,' not in body)
+# Competitor and channel evidence is built in one place now, and capped there.
+check("discovery evidence is capped where it is built",
+      'CHAR_BUDGET.get(5, 1600)' in SRC)
+check("no evidence path stores an uncapped page body",
+      SRC.count('"text": (src["text"] or "")[:CHAR_BUDGET') == 1)
 for tier, path in ((5, "competitor/channel page"), (6, "tavily web source")):
     capped = GIANT[:rs.CHAR_BUDGET.get(tier, 900)]
     check("a 1.4 MB %s becomes %d chars" % (path, rs.CHAR_BUDGET.get(tier, 900)),

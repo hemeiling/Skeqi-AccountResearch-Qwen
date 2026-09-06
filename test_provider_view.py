@@ -291,9 +291,9 @@ check("and the provider absence sentence still lands there",
       pv.NO_PROVIDER_EN in out14b)
 
 print("\n[15] Skipped is not the same as searched and empty")
-skipped = pv.competitor_prompt_block([], {"competitor_skip_reason":
-                                          "insufficient profile evidence: capabilities"})
-searched = pv.competitor_prompt_block([], {})
+skipped = pv.competitor_prompt_block(
+    [], {"skip_reason": "research returned no readable sources"})
+searched = pv.competitor_prompt_block([], {"search_count": 4})
 check("a skipped path says NOT PERFORMED", "NOT PERFORMED" in skipped)
 check("and uses the limitation wording, not the absence wording",
       pv.NOT_SEARCHED_COMPETITOR_EN in skipped and pv.NO_COMPETITOR_EN not in skipped)
@@ -305,11 +305,11 @@ check("and uses the absence wording verbatim", pv.NO_COMPETITOR_EN in searched
       and pv.NO_COMPETITOR_ZH in searched)
 check("the skipped block forbids claiming the account has no competitors",
       "do NOT report that the account has no competitors" in skipped)
-h_skipped = pv.channel_prompt_block([], {"go_to_market_model": "DIRECT",
-                                         "go_to_market_confidence": "high",
-                                         "channel_skip_reason": "corroborated as DIRECT"})
+h_skipped = pv.channel_prompt_block(
+    [], {"go_to_market_model": "UNKNOWN",
+         "skip_reason": "research returned no readable sources"})
 h_searched = pv.channel_prompt_block([], {"go_to_market_model": "UNKNOWN",
-                                          "go_to_market_confidence": "none"})
+                                          "search_count": 4})
 check("a skipped channel path says NOT PERFORMED", "NOT PERFORMED" in h_skipped)
 check("and uses the channel limitation wording",
       pv.NOT_SEARCHED_CHANNEL_EN in h_skipped and pv.NO_CHANNEL_EN not in h_skipped)
