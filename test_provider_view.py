@@ -222,7 +222,10 @@ check("a very short distinctive token is not used for ownership",
       "two characters would match far too much")
 
 print("\n[13] The ACRO row is re-filed end to end")
-ACRO_TABLE = """## Competitor Analysis / \u7ade\u4e89\u5bf9\u624b\u5206\u6790
+# The heading is the PROVIDER section: this table is provider intelligence, and
+# since the corrector stopped governing Competitor Analysis that is where it
+# lives. The rows are the real ones from the ACRO run.
+ACRO_TABLE = """## Existing Automation Providers / \u73b0\u6709\u81ea\u52a8\u5316\u4f9b\u5e94\u5546
 
 | Company | Classification | Capability | Evidence |
 | --- | --- | --- | --- |
@@ -242,6 +245,80 @@ check("Acromag is NOT swept up with it",
       "Acromag" in out13 and not any("Acromag" in x for x in n13["moved_internal"]),
       str(n13["moved_internal"]))
 check("FANUC stays a named organisation", "FANUC" in cols13(rows13[1])[1])
+
+print("\n[14] The corrector no longer governs Competitor Analysis")
+# Target competitors are not providers. Judging them against the provider
+# verified set rewrote a verified competitor's confidence to "market context"
+# whenever synthesis chose a column header the provider matcher recognised.
+COMPETITOR_HEADERS = ("| Competitor | Competition Type | Evidence | Confidence |",
+                      "| Company | Competition Type | Evidence | Confidence |",
+                      "| Organization | Competition Type | Evidence | Confidence |",
+                      "| \u516c\u53f8 | \u7ade\u4e89\u7c7b\u578b | \u8bc1\u636e | \u7f6e\u4fe1\u5ea6 |",
+                      "| \u7ade\u4e89\u5bf9\u624b | \u7ade\u4e89\u7c7b\u578b | \u8bc1\u636e | \u7f6e\u4fe1\u5ea6 |")
+for header in COMPETITOR_HEADERS:
+    report = ("## Competitor Analysis / \u7ade\u4e89\u5bf9\u624b\u5206\u6790\n\n"
+              + header + "\n|---|---|---|---|\n"
+              "| Rival One | DIRECT | [4] | high |\n"
+              "| Rival Two Corp | PARTIAL | [7] | medium |\n\n"
+              "## Existing Automation Providers / \u73b0\u6709\u81ea\u52a8\u5316\u4f9b\u5e94\u5546\n\n"
+              "| Process | Provider | Evidence |\n|---|---|---|\n"
+              "| Robotics | FANUC | [2] |\n\n"
+              "## Key Decision Makers\n")
+    label = header.split("|")[1].strip()
+    for providers in ([{"name": "FANUC", "relationship": rs.REL_CONFIRMED,
+                        "provenance": rs.PROV_TARGET}], []):
+        out14, _ = pv.enforce(report, providers, ACCT)
+        sec = out14[out14.index("## Competitor Analysis"):out14.index("## Existing Automation")]
+        state = "with providers" if providers else "with none verified"
+        check("%s column survives untouched (%s)" % (label, state),
+              "| Rival One | DIRECT | [4] | high |" in sec
+              and "| Rival Two Corp | PARTIAL | [7] | medium |" in sec, sec)
+        check("%s column keeps provider vocabulary out (%s)" % (label, state),
+              "market context" not in sec and pv.NO_PROVIDER_EN not in sec)
+# And the provider section is still corrected exactly as before.
+prov_only = ("## Existing Automation Providers / \u73b0\u6709\u81ea\u52a8\u5316\u4f9b\u5e94\u5546\n\n"
+             "| Process | Provider | Incumbency | Evidence |\n|---|---|---|---|\n"
+             "| Robotics | Ghost Robotics Co | Incumbent supplier | [2] |\n"
+             "| Welding | Assembly line integration | Incumbent | [3] |\n\n"
+             "## Key Decision Makers\n")
+out14b, n14b = pv.enforce(prov_only, [], ACCT)
+check("an unverified provider's incumbency claim is still softened",
+      "market context" in out14b, out14b)
+check("a capability in the provider column is still re-filed",
+      any("Assembly line integration" in x for x in n14b["moved_capability"]),
+      str(n14b["moved_capability"]))
+check("and the provider absence sentence still lands there",
+      pv.NO_PROVIDER_EN in out14b)
+
+print("\n[15] Skipped is not the same as searched and empty")
+skipped = pv.competitor_prompt_block([], {"competitor_skip_reason":
+                                          "insufficient profile evidence: capabilities"})
+searched = pv.competitor_prompt_block([], {})
+check("a skipped path says NOT PERFORMED", "NOT PERFORMED" in skipped)
+check("and uses the limitation wording, not the absence wording",
+      pv.NOT_SEARCHED_COMPETITOR_EN in skipped and pv.NO_COMPETITOR_EN not in skipped)
+check("the Chinese limitation wording travels with it",
+      pv.NOT_SEARCHED_COMPETITOR_ZH in skipped)
+check("a searched path says it was performed",
+      "performed" in searched and "NOT PERFORMED" not in searched)
+check("and uses the absence wording verbatim", pv.NO_COMPETITOR_EN in searched
+      and pv.NO_COMPETITOR_ZH in searched)
+check("the skipped block forbids claiming the account has no competitors",
+      "do NOT report that the account has no competitors" in skipped)
+h_skipped = pv.channel_prompt_block([], {"go_to_market_model": "DIRECT",
+                                         "go_to_market_confidence": "high",
+                                         "channel_skip_reason": "corroborated as DIRECT"})
+h_searched = pv.channel_prompt_block([], {"go_to_market_model": "UNKNOWN",
+                                          "go_to_market_confidence": "none"})
+check("a skipped channel path says NOT PERFORMED", "NOT PERFORMED" in h_skipped)
+check("and uses the channel limitation wording",
+      pv.NOT_SEARCHED_CHANNEL_EN in h_skipped and pv.NO_CHANNEL_EN not in h_skipped)
+check("the Chinese channel limitation wording travels with it",
+      pv.NOT_SEARCHED_CHANNEL_ZH in h_skipped)
+check("a searched channel path uses the absence wording",
+      pv.NO_CHANNEL_EN in h_searched and "NOT PERFORMED" not in h_searched)
+check("both still forbid naming distributors from general knowledge",
+      "general knowledge" in h_skipped and "general knowledge" in h_searched)
 
 print("\n{} passed, {} failed".format(len(PASS), len(FAIL)))
 for f in FAIL:

@@ -33,8 +33,13 @@ INTERNAL_LABEL = "Internal Capability / 内部能力"
 MARKET_LABEL = "Market context / 市场参考"
 
 # Sections whose tables carry provider claims. Others are left completely alone.
-PROVIDER_HEADINGS = ("existing automation providers", "competitor analysis",
-                     "现有自动化供应商", "竞争对手分析")
+# Sections the PROVIDER verified set governs. Competitor Analysis used to be one
+# of them, and had to stop being one when the section changed meaning: it now
+# lists the TARGET's competitors, which are a different population entirely.
+# Judging them against the provider set rewrote a verified competitor's
+# confidence to "market context" whenever synthesis headed the column Company,
+# Organization or 公司 - which the previous prompt itself specified.
+PROVIDER_HEADINGS = ("existing automation providers", "现有自动化供应商")
 
 RELATIONSHIP_LABEL = {
     rs.REL_CONFIRMED: "CONFIRMED / 已确认",
@@ -95,6 +100,16 @@ NO_COMPETITOR_EN = ("No sufficiently verified target-account competitors were "
 NO_COMPETITOR_ZH = "根据现有证据，尚未确认足够可靠的目标客户竞争对手。"
 NO_COMPETITOR = "{}\n{}".format(NO_COMPETITOR_EN, NO_COMPETITOR_ZH)
 
+# Searched and found nothing is a finding. Never searched is a limitation. They
+# read identically to a reader unless the report says which one happened, and
+# only one of them is evidence about the account.
+NOT_SEARCHED_COMPETITOR_EN = ("Target-competitor discovery was not performed for "
+                              "this account, so competitors were neither confirmed "
+                              "nor ruled out.")
+NOT_SEARCHED_COMPETITOR_ZH = "未执行目标客户竞争对手检索，因此既未确认也未排除竞争对手。"
+NOT_SEARCHED_COMPETITOR = "{}\n{}".format(NOT_SEARCHED_COMPETITOR_EN,
+                                          NOT_SEARCHED_COMPETITOR_ZH)
+
 
 def competitor_prompt_block(competitors, profile=None):
     """Verified competitors as FACTS. The model describes them; it does not add
@@ -102,12 +117,19 @@ def competitor_prompt_block(competitors, profile=None):
     rows = [c for c in (competitors or []) if c.get("organization_name")]
     if not rows:
         why = (profile or {}).get("competitor_skip_reason")
-        return ("\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手\n"
-                "None.\n" + NO_COMPETITOR + "\n"
-                + ("Reason: " + why + "\n" if why else "")
-                + "State the sentence above verbatim. Do NOT supply competitor "
-                  "names from general knowledge, and do NOT list the account's "
-                  "own suppliers, partners or customers as competitors.\n")
+        head = "\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手\n"
+        tail = ("Do NOT supply competitor names from general knowledge, and do NOT "
+                "list the account's own suppliers, partners or customers as "
+                "competitors.\n")
+        if why:
+            return (head + "Discovery status: NOT PERFORMED.\nReason: " + why + "\n"
+                    + NOT_SEARCHED_COMPETITOR + "\n"
+                    + "State the sentence above verbatim. Say the search did not "
+                      "run; do NOT report that the account has no competitors.\n"
+                    + tail)
+        return (head + "Discovery status: performed; nothing met the verification "
+                       "bar.\n" + NO_COMPETITOR + "\n"
+                + "State the sentence above verbatim.\n" + tail)
     lines = ["\n\n---\n\nVERIFIED TARGET COMPETITORS / 已核实的目标客户竞争对手",
              "These compete with the ACCOUNT for customers, projects and market share.",
              "Each was verified as a real organisation AND scored for competitive",
@@ -134,6 +156,12 @@ NO_CHANNEL_EN = ("No verified distributors, representatives or resellers were "
                  "identified for this account.")
 NO_CHANNEL_ZH = "未发现可验证的分销商、代理商或经销商。"
 NO_CHANNEL = "{}\n{}".format(NO_CHANNEL_EN, NO_CHANNEL_ZH)
+
+NOT_SEARCHED_CHANNEL_EN = ("Channel discovery was not performed for this account, "
+                           "so distributors and representatives were neither "
+                           "confirmed nor ruled out.")
+NOT_SEARCHED_CHANNEL_ZH = "未执行渠道检索，因此既未确认也未排除分销商或代理商。"
+NOT_SEARCHED_CHANNEL = "{}\n{}".format(NOT_SEARCHED_CHANNEL_EN, NOT_SEARCHED_CHANNEL_ZH)
 
 _GTM_LABEL = {
     "DIRECT": "Direct sales / 直销",
@@ -166,14 +194,20 @@ def channel_prompt_block(channels, profile=None):
                      "it as settled, and do not state that the account has no "
                      "channel merely because none was found.")
     if not reps:
-        lines += ["Verified distributors, representatives or resellers: None.",
-                  NO_CHANNEL,
-                  "State the sentence above verbatim. Do NOT name distributors "
-                  "from general knowledge, and do NOT present a supplier, "
-                  "customer, integrator or technology partner as a distributor."]
         why = prof.get("channel_skip_reason")
         if why:
-            lines.append("Reason: " + why)
+            lines += ["Discovery status: NOT PERFORMED.",
+                      "Reason: " + why,
+                      NOT_SEARCHED_CHANNEL,
+                      "State the sentence above verbatim. Say the search did not "
+                      "run; do NOT report that the account has no distributors."]
+        else:
+            lines += ["Discovery status: performed; nothing met the verification bar.",
+                      NO_CHANNEL,
+                      "State the sentence above verbatim."]
+        lines.append("Do NOT name distributors from general knowledge, and do NOT "
+                     "present a supplier, customer, integrator or technology "
+                     "partner as a distributor.")
     else:
         lines.append("Verified channel entities. Each was verified as a real "
                      "organisation AND found stating that it represents this "

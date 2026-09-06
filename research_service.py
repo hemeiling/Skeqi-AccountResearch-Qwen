@@ -1770,8 +1770,10 @@ def competitor_verifier(profile, name, name_cn, aliases, sink):
             org = _candidate_org_name(f["url"], f.get("title") or "", body)
             if not org:
                 continue                       # cannot name it -> cannot list it
-            # The candidate must not be the account itself, nor a name we already
-            # hold as the account's own provider.
+            # The candidate must not be the account itself. It MAY be one of the
+            # account's own providers: supplying an account and competing with it
+            # are independent relationships, and a company that does both is
+            # recorded under both rather than removed from one.
             if _mentions(name, org) or (name_cn and name_cn in org) \
                     or any(a and _mentions(a, org) for a in (aliases or [])):
                 continue
@@ -2581,8 +2583,13 @@ partners and customers are NOT its competitors unless separate evidence shows th
 with it. Operating in the same industry is NOT competition.
 1. SOURCE OF TRUTH. Use ONLY the organisations listed in the VERIFIED TARGET COMPETITORS block.
 Do not add names from general knowledge, do not infer a competitor from an industry, and do not
-promote a supplier or partner into this section. If the block is empty, say so and stop: state
-verbatim "No sufficiently verified target-account competitors were identified from the available evidence." and "根据现有证据，尚未确认足够可靠的目标客户竞争对手。"
+promote a supplier or partner into this section. If the block is empty, say so and stop, using the
+sentence the block gives you. The two empty states are different findings and must never be
+reported as the same one:
+- discovery ran and nothing met the bar - state verbatim
+  "No sufficiently verified target-account competitors were identified from the available evidence." and "根据现有证据，尚未确认足够可靠的目标客户竞争对手。"
+- discovery was NOT PERFORMED - state verbatim
+  "Target-competitor discovery was not performed for this account, so competitors were neither confirmed nor ruled out." and "未执行目标客户竞争对手检索，因此既未确认也未排除竞争对手。"
 2. TABLE the verified competitors: Competitor | Competition Type DIRECT/PARTIAL/ADJACENT |
 Competitive Overlap | Relevant Offerings | Customer/Industry Overlap | Geographic Overlap |
 Evidence [n] | Confidence. One row per organisation in the verified block, and no others.
@@ -2607,8 +2614,12 @@ Never state that the account sells only direct because no distributor was found:
 evidence is not evidence of absence, and say which of the two this is.
 2. VERIFIED CHANNEL. Use ONLY the organisations in that block. For each: role
 (AUTHORIZED_DISTRIBUTOR / DISTRIBUTOR / REPRESENTATIVE / RESELLER), territory, what the source
-actually states, evidence [n], confidence. If there are none, state verbatim
-"No verified distributors, representatives or resellers were identified for this account." and "未发现可验证的分销商、代理商或经销商。"
+actually states, evidence [n], confidence. If there are none, use the sentence the block gives you.
+The two empty states are different findings and must never be reported as the same one:
+- discovery ran and nothing met the bar - state verbatim
+  "No verified distributors, representatives or resellers were identified for this account." and "未发现可验证的分销商、代理商或经销商。"
+- discovery was NOT PERFORMED - state verbatim
+  "Channel discovery was not performed for this account, so distributors and representatives were neither confirmed nor ruled out." and "未执行渠道检索，因此既未确认也未排除分销商或代理商。"
 3. RELATED BUT NOT CHANNEL. Integrators, technology partners and service partners named in that
 block are listed separately as partners. Representing an account and integrating its equipment are
 different relationships; never promote one into the other.

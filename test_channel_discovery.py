@@ -246,9 +246,12 @@ check("and says the account is not understood, not that no channel exists",
       "account understanding" in (t_cov["skip_reason"] or ""), str(t_cov["skip_reason"]))
 
 print("\n[8] Absence is stated, never filled in")
+# PROFILE is channel-ready, so an empty result here means searched-and-empty.
 block = pv.channel_prompt_block([], PROFILE)
 check("the absence sentence is verbatim EN", pv.NO_CHANNEL_EN in block)
 check("the absence sentence is verbatim ZH", pv.NO_CHANNEL_ZH in block)
+check("and it says discovery was performed",
+      "performed" in block and "NOT PERFORMED" not in block)
 check("general knowledge is forbidden", "general knowledge" in block.lower())
 check("a low or medium model is flagged as unsettled",
       "NOT firmly established" in block)
@@ -271,6 +274,8 @@ check("it is scoped to the account's outbound channel", "outbound channel" in se
 check("it forbids absence reasoning", "absence of" in sec.lower())
 check("it carries the absence wording in both languages",
       pv.NO_CHANNEL_EN in sec and pv.NO_CHANNEL_ZH in sec)
+check("and the not-performed wording, kept distinct",
+      pv.NOT_SEARCHED_CHANNEL_EN in sec and pv.NOT_SEARCHED_CHANNEL_ZH in sec)
 check("it separates partners from channel", "NOT CHANNEL" in sec)
 check("the heading count was updated", "these 20 headings" in SRC)
 import re                                                          # noqa: E402

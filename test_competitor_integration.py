@@ -227,9 +227,18 @@ check("the block is labelled for the target",
 check("verified names appear", comp[0]["organization_name"] in block)
 check("the three dimensions are shown",
       "Offering overlap" in block and "Geography" in block)
+# MANUFACTURER was skipped, so it must read as a limitation, not as a finding.
 empty_block = pv.competitor_prompt_block([], MANUFACTURER)
-check("the absence sentence is verbatim EN", pv.NO_COMPETITOR_EN in empty_block)
-check("the absence sentence is verbatim ZH", pv.NO_COMPETITOR_ZH in empty_block)
+check("a skipped path says NOT PERFORMED", "NOT PERFORMED" in empty_block)
+check("the limitation sentence is verbatim EN",
+      pv.NOT_SEARCHED_COMPETITOR_EN in empty_block)
+check("the limitation sentence is verbatim ZH",
+      pv.NOT_SEARCHED_COMPETITOR_ZH in empty_block)
+searched_block = pv.competitor_prompt_block([], {})
+check("a searched path uses the absence sentence verbatim EN",
+      pv.NO_COMPETITOR_EN in searched_block)
+check("a searched path uses the absence sentence verbatim ZH",
+      pv.NO_COMPETITOR_ZH in searched_block)
 check("the empty block forbids general knowledge",
       "general knowledge" in empty_block.lower())
 check("the empty block names no organisation",
@@ -253,6 +262,8 @@ check("the verified block is the only source",
       "VERIFIED TARGET COMPETITORS" in sec)
 check("the absence wording is instructed in both languages",
       pv.NO_COMPETITOR_EN in sec and pv.NO_COMPETITOR_ZH in sec)
+check("and so is the not-performed wording",
+      pv.NOT_SEARCHED_COMPETITOR_EN in sec and pv.NOT_SEARCHED_COMPETITOR_ZH in sec)
 check("SKEQI incumbency intelligence still lives in Existing Automation Providers",
       "Incumbency" in prov and "COMPETE/REPLACE/COMPLEMENT/INTEGRATE" in prov)
 check("synthesis is handed the competitors",
