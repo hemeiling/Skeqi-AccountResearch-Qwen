@@ -1910,3 +1910,31 @@ network-free. 红旗 is covered but NOT special-cased: the same asserts run over
 Cyrillic and Japanese fixtures. All six engine suites green: 28 / 48 / 29 / 25 /
 43 / 36.
 
+---
+
+## Bilingual quality — the provider table is not localised (2026-09-06) — OPEN, NOT SCHEDULED
+
+Found while diagnosing what looked like a duplicated table in the Ford
+production run. It is NOT a duplication defect and must not be de-duplicated.
+
+Each section is written as an English block followed by a Chinese block under
+one heading. The prose is genuinely translated; the TABLE is repeated in English
+rather than localised. Proven against the language views of the real report:
+
+| view      | provider-table occurrences |
+|-----------|---------------------------|
+| en        | 1 |
+| zh        | 1 |
+| bilingual | 2 |
+
+So the English reader and the Chinese reader each see the table exactly once,
+which is correct. What the Chinese reader does not get is a Chinese table: its
+headers and cell values stay in English.
+
+> **Do not add table de-duplication.** It would delete the table from the
+> Chinese view entirely. The duplicate is the bilingual structure working.
+
+The open question is translation completeness in table content, which is a
+prompt/synthesis concern rather than a rendering one. Deliberately out of scope
+for the provider-enforcement work.
+
