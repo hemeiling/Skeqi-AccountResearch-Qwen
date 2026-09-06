@@ -71,14 +71,15 @@ _USES = (r"uses?|using|used|deploy\w*|install\w*|operat\w*|adopt\w*|"
          r"supplier of the year|supplier to|supplies to|awarded by")
 
 _GTM_CUES = {
-    # "Custom Automated Equipment" as a PRODUCT LINE is a positive statement that
-    # the company sells engineered-to-order, which is a direct-sales model. It is
-    # evidence of what they do, not an inference from what is missing - the words
-    # are on the page. Up to two words may sit between, because real product
-    # names read "Custom Automated Assembly Systems".
-    DIRECT: (r"request a quote|contact (?:our|the) sales|engineered[- ]to[- ]order|"
-             r"custom\w*(?:\s+\w+){0,2}\s+(?:solution|system|equipment|machine|line|cell)s?|"
-             r"direct sales|our engineers work|project[- ]based|定制|直销|工程项目"),
+    # DIRECT requires evidence about HOW the company SELLS, not what it sells.
+    # An earlier version accepted product-line language - "Custom Automated
+    # Equipment" - as proof of direct selling. It is not: it proves the offering
+    # is engineered-to-order, and engineered-to-order products are routinely sold
+    # through representatives. The two questions are independent.
+    DIRECT: (r"request a quote|contact (?:our|the) sales(?: team)?|our sales team|"
+             r"account (?:executive|manager)s?|direct sales|sold directly|"
+             r"we sell directly|contract directly with|our sales engineers|"
+             r"直销|直接销售|直接签约"),
     DISTRIBUTOR_LED: (r"authoriz(?:ed|sed) distributor|find a distributor|distributor "
                       r"network|dealer locator|our distributors|经销商|分销商|代理商"),
     REPRESENTATIVE_LED: (r"manufacturers'? representative|sales representative network|"
@@ -301,15 +302,33 @@ def _readiness(p):
     if c["business_model"] == "none":
         comp_missing.append("business_model")
 
+    # Channel readiness does NOT require a known go-to-market model. Discovering
+    # that model is part of what channel discovery is FOR, so requiring it first
+    # would make the path unreachable exactly when it is most useful.
+    #
+    # Two different kinds of "unknown" have to stay apart:
+    #   we have not found the answer yet        -> search for it
+    #   we do not understand the account enough -> searching would be guessing
+    gtm = p["go_to_market_model"]
     chan_missing = []
-    if c["go_to_market"] == "none":
-        chan_missing.append("go_to_market_model")
+    if p["business_model"] in ("unknown",):
+        chan_missing.append("business_model")
+    if c["offerings"] not in _OK and c["capabilities"] not in _OK:
+        chan_missing.append("offerings_or_capabilities")
+
+    if gtm == DIRECT:
+        chan_ready, chan_reason = False, "go-to-market verified as DIRECT; no channel to discover"
+    elif chan_missing:
+        chan_ready, chan_reason = False, (
+            "insufficient account understanding to search intelligently: "
+            + ", ".join(chan_missing))
+    else:
+        chan_ready, chan_reason = True, None
 
     return {
         "competitor_discovery_ready": not comp_missing,
         "competitor_skip_reason": (None if not comp_missing
                                    else "insufficient profile evidence: " + ", ".join(comp_missing)),
-        "channel_discovery_ready": not chan_missing,
-        "channel_skip_reason": (None if not chan_missing
-                                else "insufficient profile evidence: " + ", ".join(chan_missing)),
+        "channel_discovery_ready": chan_ready,
+        "channel_skip_reason": chan_reason,
     }

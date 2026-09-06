@@ -86,18 +86,28 @@ check("no channel language at all yields UNKNOWN",
                        "X", "x.com")["go_to_market_model"] == op.UNKNOWN)
 check("an empty corpus yields UNKNOWN",
       op.build_profile([], "X", "x.com")["go_to_market_model"] == op.UNKNOWN)
-check("engineered-to-order product lines give DIRECT",
-      p["go_to_market_model"] == op.DIRECT, p["go_to_market_model"])
+# Product-line language proves what is SOLD, not HOW. Engineered-to-order goods
+# are routinely sold through representatives, so the two questions are separate.
+check("engineered-to-order product lines do NOT give DIRECT",
+      p["go_to_market_model"] == op.UNKNOWN, p["go_to_market_model"])
+SELLS_DIRECT = [ev("https://s.com/", "Sales", official=True, domain="s.com",
+                   text="Contact our sales team. Our account executives contract "
+                        "directly with each customer.")]
+check("explicit direct-selling language DOES give DIRECT",
+      op.build_profile(SELLS_DIRECT, "S", "s.com")["go_to_market_model"] == op.DIRECT)
 DIST = [ev("https://d.com/", "Find a Distributor", official=True, domain="d.com",
-           text="Our authorized distributor network covers North America.")]
+           text="D designs and builds custom automated assembly systems and "
+                "robotic welding cells for automotive manufacturers. Our authorized distributor network covers North America.")]
 check("distributor language gives DISTRIBUTOR_LED",
       op.build_profile(DIST, "D", "d.com")["go_to_market_model"] == op.DISTRIBUTOR_LED)
 REP = [ev("https://r.com/", "Reps", official=True, domain="r.com",
-          text="Our manufacturers' representative network serves the Midwest.")]
+           text="R designs and builds custom automated assembly systems and "
+                "robotic welding cells for automotive manufacturers. Our manufacturers' representative network serves the Midwest.")]
 check("representative language gives REPRESENTATIVE_LED",
       op.build_profile(REP, "R", "r.com")["go_to_market_model"] == op.REPRESENTATIVE_LED)
 BOTH = [ev("https://b.com/", "Sales", official=True, domain="b.com",
-           text="Request a quote from our engineers, or find a distributor near you.")]
+           text="B designs and builds custom automated assembly systems and "
+                "robotic welding cells for automotive manufacturers. Request a quote from our sales team, or find a distributor near you.")]
 check("both signals give MIXED",
       op.build_profile(BOTH, "B", "b.com")["go_to_market_model"] == op.MIXED)
 check("a blocked site cannot become DIRECT",
@@ -117,16 +127,45 @@ check("a weak profile is ready for neither path",
       not weak["competitor_discovery_ready"] and not weak["channel_discovery_ready"])
 check("and both give a reason",
       weak["competitor_skip_reason"] and weak["channel_skip_reason"])
-check("channel readiness depends only on go-to-market",
-      op.build_profile(DIST, "D", "d.com")["channel_discovery_ready"])
+check("channel readiness turns on account understanding, not on knowing the model",
+      "account understanding" in
+      (op.build_profile([ev("https://w2.com/a", "W", domain="w2.com",
+                            text="W Inc exists.")], "W Inc", "")["channel_skip_reason"] or ""))
+
+print("\n[5b] Channel readiness does not require a KNOWN go-to-market")
+# Discovering the model is part of what channel discovery is for. Requiring it
+# first would make the path unreachable exactly when it is most useful.
+check("UNKNOWN plus a solid profile is READY to search",
+      p["go_to_market_model"] == op.UNKNOWN and p["channel_discovery_ready"],
+      "%s / %s" % (p["go_to_market_model"], p["channel_skip_reason"]))
+check("verified DIRECT skips the search instead",
+      not op.build_profile(SELLS_DIRECT, "S", "s.com")["channel_discovery_ready"])
+check("and says the model was verified, not that evidence was missing",
+      "verified as DIRECT" in
+      (op.build_profile(SELLS_DIRECT, "S", "s.com")["channel_skip_reason"] or ""))
+check("DISTRIBUTOR_LED is ready", op.build_profile(DIST, "D", "d.com")["channel_discovery_ready"])
+check("REPRESENTATIVE_LED is ready", op.build_profile(REP, "R", "r.com")["channel_discovery_ready"])
+check("MIXED is ready", op.build_profile(BOTH, "B", "b.com")["channel_discovery_ready"])
+# The two kinds of "unknown" must stay apart.
+thin = op.build_profile(MANUFACTURER, "Northwind Motors", "northwind-motors.com")
+check("a thin profile is NOT ready even though its model is also unknown",
+      not thin["channel_discovery_ready"])
+check("and the reason names understanding, not the missing model",
+      "account understanding" in (thin["channel_skip_reason"] or "")
+      and "go_to_market" not in (thin["channel_skip_reason"] or ""),
+      str(thin["channel_skip_reason"]))
 
 print("\n[6] Every assertion is traceable, and the result is deterministic")
 check("offerings carry their sources",
       all(v for v in p["supporting_evidence"]["offerings"].values()))
 check("capabilities carry their sources",
       all(v for v in p["supporting_evidence"]["capabilities"].values()))
-check("go-to-market carries its source",
-      bool(p["supporting_evidence"]["go_to_market_model"]))
+check("go-to-market carries its source when one was found",
+      bool(op.build_profile(SELLS_DIRECT, "S", "s.com")
+           ["supporting_evidence"]["go_to_market_model"]))
+check("and carries none when the model is unknown",
+      not p["supporting_evidence"]["go_to_market_model"],
+      "an unknown model must not fabricate a citation")
 check("usage is kept separately",
       "usage" in m["supporting_evidence"] and m["supporting_evidence"]["usage"])
 a1 = op.build_profile(INTEGRATOR, "Acme Auto", "acme-auto.com")
