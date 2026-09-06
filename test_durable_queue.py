@@ -52,39 +52,19 @@ if not DSN:
                     DSN = line.split("=", 1)[1].strip()
 
 TEST_TABLE = "arq_queue_selftest_" + uuid.uuid4().hex[:8]
-DDL = """
-CREATE TABLE {t} (
-  job_id           text PRIMARY KEY,
-  company_key      text NOT NULL,
-  company_name     text NOT NULL,
-  website          text,
-  model            text,
-  job_type         text,
-  status           text NOT NULL,
-  stage            text,
-  progress_percent int,
-  error            text,
-  started_at       timestamptz,
-  updated_at       timestamptz,
-  completed_at     timestamptz,
-  queued_at        timestamptz NOT NULL DEFAULT now(),
-  worker_id        text,
-  heartbeat_at     timestamptz,
-  lease_expires_at timestamptz,
-  attempts         int NOT NULL DEFAULT 0,
-  payload          jsonb,
-  runtime_state    jsonb
-);
-"""
+# Copied FROM the production table, defaults included, rather than hand-written.
+# A hand-written CREATE TABLE drifted: production carried DEFAULT now() on
+# started_at, the test table did not, and the timing regression passed here while
+# failing in production. The schema under test is now the deployed one.
+DDL = ("CREATE TABLE {t} (LIKE " + js.TABLE
+       + " INCLUDING DEFAULTS INCLUDING CONSTRAINTS)")
 
 
 def with_db():
     import psycopg
     conn = psycopg.connect(DSN, connect_timeout=15)
     with conn.cursor() as cur:
-        for stmt in DDL.format(t=TEST_TABLE).split(";"):
-            if stmt.strip():
-                cur.execute(stmt)
+        cur.execute(DDL.format(t=TEST_TABLE))
     conn.commit()
     return conn
 
@@ -274,24 +254,52 @@ else:
         check("the true owner still can", store.heartbeat(
             lease3.job_id, lease3.worker_id, lease3.attempts) is True)
 
-        # Queue timing: queued_at is set on insert, started_at only on claim.
+        # Queue timing needs a clean queue: leftovers from the race section above
+        # are older, so a claim would take one of those and prove nothing.
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM {}".format(TEST_TABLE))
+        conn.commit()
         store.enqueue("timing" + uuid.uuid4().hex[:8], "timingkey" + uuid.uuid4().hex[:6],
                       "Timing Co", "", "qwen3.6-flash", {"company": "Timing Co"})
         with conn.cursor() as cur:
             cur.execute("SELECT queued_at, started_at FROM {} WHERE company_name="
                         "'Timing Co'".format(TEST_TABLE))
             qa, sa = cur.fetchone()
-        check("a queued job has no start time yet", sa is None, str(sa))
+        check("a newly queued row has started_at IS NULL", sa is None, str(sa))
         check("but it does have a queue time", qa is not None)
+        with conn.cursor() as cur:
+            cur.execute("SELECT column_default FROM information_schema.columns "
+                        "WHERE table_name=%s AND column_name='started_at'",
+                        (js.TABLE,))
+            started_default = cur.fetchone()[0]
+        check("production carries no default on started_at", started_default is None,
+              "found %r - a default fills the column before any worker claims it"
+              % started_default)
         time.sleep(1.1)
         tlease, _ = js.JobStore(DSN, table=TEST_TABLE).claim("w-timing", max_concurrent=9)
         with conn.cursor() as cur:
             cur.execute("SELECT queued_at, started_at FROM {} WHERE job_id=%s".format(
                 TEST_TABLE), (tlease.job_id,))
             qa2, sa2 = cur.fetchone()
-        check("the claim sets started_at", sa2 is not None)
-        check("queued_at is strictly before started_at", qa2 < sa2,
-              "wait = %.1fs" % (sa2 - qa2).total_seconds())
+        check("the first claim sets started_at", sa2 is not None)
+        check("started_at is strictly after queued_at", qa2 < sa2,
+              "wait = %.1fs, measurable at last" % (sa2 - qa2).total_seconds())
+
+        # A reclaim must not restate when the work began.
+        with conn.cursor() as cur:
+            cur.execute("UPDATE {} SET lease_expires_at = now() - interval '1 second' "
+                        "WHERE job_id=%s".format(TEST_TABLE), (tlease.job_id,))
+        conn.commit()
+        time.sleep(1.1)
+        release, _ = js.JobStore(DSN, table=TEST_TABLE).claim("w-retry", max_concurrent=9)
+        with conn.cursor() as cur:
+            cur.execute("SELECT started_at, attempts FROM {} WHERE job_id=%s".format(
+                TEST_TABLE), (tlease.job_id,))
+            sa_retry, att_retry = cur.fetchone()
+        check("a reclaim keeps the original start time", sa_retry == sa2,
+              "attempt %s, still %s" % (att_retry, sa_retry))
+        check("but it does count as another attempt", att_retry == 2)
+        tlease = release
 
         # The fenced terminal write succeeds and cleans the lease up.
         ok = tlease.finish("completed_with_limitations", {"phase": "completed"},
@@ -308,14 +316,20 @@ else:
         check("and the lease knows it finished", tlease.finished is True)
         check("so it may still report the result", tlease.settled() is True)
 
-        # Burn through the attempts and the reaper gives up honestly.
+        # Burn through the attempts and the reaper gives up honestly. A fresh row:
+        # the timing section above cleared the table, so the earlier leases are
+        # gone and reading them back would say nothing.
+        burn = "burn" + uuid.uuid4().hex[:8]
+        store.enqueue(burn, "burnkey" + uuid.uuid4().hex[:6], "Burn Co", "",
+                      "qwen3.6-flash", {"company": "Burn Co"})
         with conn.cursor() as cur:
-            cur.execute("UPDATE {} SET attempts = 3, "
+            cur.execute("UPDATE {} SET status='running', attempts = 3, "
+                        "worker_id='w-burn', "
                         "lease_expires_at = now() - interval '1 second' "
-                        "WHERE job_id = %s".format(TEST_TABLE), (lease3.job_id,))
+                        "WHERE job_id = %s".format(TEST_TABLE), (burn,))
         conn.commit()
-        js.JobStore(DSN, table=TEST_TABLE).claim("w4", max_concurrent=5)
-        row = store.read(lease3.job_id)
+        js.JobStore(DSN, table=TEST_TABLE).claim("w4", max_concurrent=9)
+        row = store.read(burn)
         check("the attempt ceiling fails the job", row["status"] == "failed",
               str(row["status"]))
         check("and says why", "Abandoned after" in (row["error"] or ""),

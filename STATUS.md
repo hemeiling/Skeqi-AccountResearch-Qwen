@@ -2,7 +2,7 @@
 
 > Last updated: 2026-09-06
 > Updated by: Claude
-> Current phase: P0-A durable research queue built; deploy pending
+> Current phase: P0-A durable queue LIVE and validated in production; P0-B not started
 > Latest change: engine competitor pipeline integration (local, NOT deployed);
 > deployed revisions remain engine `55f6ffe`, CRM `4bb64d5`
 > Overall status: OPERATIONAL — all three DashScope models verified **available** 2026-09-03
@@ -794,7 +794,53 @@ account ↔ process ↔ provider relationships. Kept only as documentation.
 
 ---
 
-## P0-A — durable research queue (2026-09-06) — IMPLEMENTED, NOT DEPLOYED
+## P0-A lifecycle cleanup (2026-09-06) — DEPLOYED AND VALIDATED
+
+Three production runs closed the loop. The first proved the queue works and
+exposed two seam defects; the second proved the fixes; a no-cost probe closed the
+last one.
+
+| Defect | Symptom | Fix |
+|---|---|---|
+| Terminal-state race | CRM callback wrote the status first, so the worker's fenced write matched no row, raised OwnershipLost and left a lease on a finished job | worker writes the terminal state BEFORE calling back; `settled()` lets the worker that wrote it still report it; `completeQwenJob` never overwrites a terminal status |
+| `started_at` | `DEFAULT now()` stamped every enqueued row, so queue wait read 0.000s | CRM migration drops the default; the claim's existing COALESCE sets it |
+| Lost identity | `ON CONFLICT DO NOTHING` discarded `created_by`, `company_id`, `identity_source` once the engine began inserting the row | `claimQwenJob` upserts them |
+| Stale sweeper | marked any queued row `interrupted` after 25 minutes; with one worker, waiting that long is normal | restricted to running rows whose lease lapsed long ago |
+
+### Validated in production
+
+AMADA run `851da2e7`, 390.8s, `completed_with_limitations`: one claim, one
+worker, attempts 1, heartbeat 4-29s old against a 61-86s lease, **fenced terminal
+write landed and the lease was cleared**, the CRM then saved the report as
+version 2, accounting complete, zero duplicate request ids, identity fields
+populated, no sweeper interference.
+
+The timing fix was closed by a synthetic probe rather than another paid run: the
+ceiling was saturated so the real worker could not claim, a row was enqueued
+through the engine's own path, and this process claimed it. `started_at` was NULL
+while queued, **measured queue wait 3.31s**, unchanged by the terminal write.
+
+### Why the test missed the default
+
+The suite hand-wrote its throwaway table, so it never carried production's
+`DEFAULT now()`. It now creates the table with
+`LIKE account_research_qwen_jobs INCLUDING DEFAULTS INCLUDING CONSTRAINTS`, and
+the schema under test is the deployed one. That single change turned the timing
+assertions red against production and green after the migration.
+
+### Timing semantics, settled
+
+```
+queued_at    the request was accepted
+started_at   a worker first claimed it   (NULL until then, never moved by a reclaim)
+completed_at the run reached a terminal state
+```
+
+Engine 777 checks across 15 suites, CRM 438 across 7, zero failures.
+
+---
+
+## P0-A — durable research queue (2026-09-06) — DEPLOYED
 
 **24 of the first 46 jobs ended `interrupted`.** A run lived in one Python
 process's memory: `POST /api/research` wrote a dictionary, started a daemon
@@ -2331,10 +2377,14 @@ Production validation of the stored Tesla report through the CRM render route.
 Supplier list complete in all three languages, PDFs valid, no regeneration.
 
 **Current stopping point:**
-P0-A is built and tested, including a real two-worker race against Postgres. Not
-deployed, no paid model call, no AMADA retry. P0-B, moving the evidence cache
-into Neon, is designed but NOT started. Deploy order matters: CRM first for the
-migration, then the engine web service, then the new worker service.
+P0-A and its lifecycle cleanup are deployed and validated in production, on one
+Starter background worker running one job at a time. P0-B, moving the evidence
+cache into Neon, is designed but NOT started.
+
+Open, recorded, not started: the report's Competitor Analysis and Distributors
+sections echo scaffolding - "SOURCE OF TRUTH", "N/A per discovery" - instead of
+prose. That is a content-quality pass, deliberately kept out of the lifecycle
+work.
 
 **The one thing to know:**
 Render's auto-deploy is unreliable on the engine. `9955236` and `c121a60` both
