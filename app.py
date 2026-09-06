@@ -314,6 +314,13 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             def m(job):
                 job["models"][model].update(
                     status=state, elapsed=run["latency_seconds"], result=saved,
+                    # Every synthesis attempt that actually reached a model, kept
+                    # on the JOB rather than on the saved record. save_run() builds
+                    # the report document and never copied this key across, so the
+                    # callback read an always-empty list and no synthesis event was
+                    # ever emitted: completed runs reported 0 synthesis calls and
+                    # the cost shown was retrieval only.
+                    ai_attempts=list(run.get("ai_attempts") or []),
                     error=run["error"], model_used=run.get("model_used"),
                     fallback_used=bool(run.get("fallback_used")),
                     models_tried=run.get("models_tried") or [],
@@ -348,8 +355,14 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                          "synthesis can be retried without re-running research."),
                 retrieval_preserved=True,
                 wall_seconds=round(time.time() - t_wall, 1)))
+            # Retrieval ran and every synthesis attempt reached a model, so both
+            # were paid for. Reporting nothing here made a failed run look free.
+            failed_attempts = []
+            for mv in (snap.get("models") or {}).values():
+                failed_attempts.extend(mv.get("ai_attempts") or [])
             notify_crm(job_id, {"event": "synthesis_failed",
                                 "company_name": company, "website": website,
+                                "ai_usage": (package.get("ai_usage") or []) + failed_attempts,
                                 "error": "Synthesis failed after all fallbacks. "
                                          "Retrieval evidence preserved."})
             return
@@ -377,7 +390,7 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                 # plus every synthesis attempt that actually executed. Provider
                 # numbers only. The CRM prices it; the engine does not.
                 "ai_usage": (package.get("ai_usage") or [])
-                            + list((m.get("result") or {}).get("ai_attempts") or []),
+                            + list(m.get("ai_attempts") or []),
                 "limitations": quality.get("limitations") or [],
                 "zero_grounding": bool(quality.get("zero_grounding")),
                 "warnings": [st["message"] for st in (snap.get("stages") or [])
