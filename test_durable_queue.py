@@ -75,8 +75,6 @@ CREATE TABLE {t} (
   payload          jsonb,
   runtime_state    jsonb
 );
-CREATE INDEX idx_arq_claimable ON {t} (queued_at) WHERE status = 'queued';
-CREATE INDEX idx_arq_leases ON {t} (lease_expires_at) WHERE status = 'running';
 """
 
 
@@ -201,9 +199,19 @@ else:
     try:
         conn = with_db()
         store = js.JobStore(DSN, table=TEST_TABLE)
-        # The throwaway table is created by this test with the same columns the
-        # CRM creates in production; the store only ever verifies them.
-        check("the store verifies the schema it needs", store.verify_schema() is True)
+        # Index names are global in Postgres, so the throwaway table cannot carry
+        # the production ones - which exercises the refusal branch for free.
+        try:
+            store.verify_schema()
+            check("a table missing the indexes is refused", False, "it passed")
+        except js.SchemaNotReady as e:
+            check("a table missing the indexes is refused",
+                  "idx_arq_claimable" in str(e), str(e)[:80])
+            check("and the message names the schema owner",
+                  "The CRM owns this schema" in str(e))
+        # The PRODUCTION table is the one that must satisfy it. Read-only.
+        check("the production table satisfies verify_schema",
+              js.JobStore(DSN).verify_schema() is True)
 
         def seed(n):
             with conn.cursor() as cur:
@@ -266,6 +274,40 @@ else:
         check("the true owner still can", store.heartbeat(
             lease3.job_id, lease3.worker_id, lease3.attempts) is True)
 
+        # Queue timing: queued_at is set on insert, started_at only on claim.
+        store.enqueue("timing" + uuid.uuid4().hex[:8], "timingkey" + uuid.uuid4().hex[:6],
+                      "Timing Co", "", "qwen3.6-flash", {"company": "Timing Co"})
+        with conn.cursor() as cur:
+            cur.execute("SELECT queued_at, started_at FROM {} WHERE company_name="
+                        "'Timing Co'".format(TEST_TABLE))
+            qa, sa = cur.fetchone()
+        check("a queued job has no start time yet", sa is None, str(sa))
+        check("but it does have a queue time", qa is not None)
+        time.sleep(1.1)
+        tlease, _ = js.JobStore(DSN, table=TEST_TABLE).claim("w-timing", max_concurrent=9)
+        with conn.cursor() as cur:
+            cur.execute("SELECT queued_at, started_at FROM {} WHERE job_id=%s".format(
+                TEST_TABLE), (tlease.job_id,))
+            qa2, sa2 = cur.fetchone()
+        check("the claim sets started_at", sa2 is not None)
+        check("queued_at is strictly before started_at", qa2 < sa2,
+              "wait = %.1fs" % (sa2 - qa2).total_seconds())
+
+        # The fenced terminal write succeeds and cleans the lease up.
+        ok = tlease.finish("completed_with_limitations", {"phase": "completed"},
+                           stage="completed")
+        check("the owner's terminal write succeeds", ok is True)
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, lease_expires_at, completed_at, started_at "
+                        "FROM {} WHERE job_id=%s".format(TEST_TABLE), (tlease.job_id,))
+            st2, lease_after, comp, sa3 = cur.fetchone()
+        check("the terminal status is durable", st2 == "completed_with_limitations", str(st2))
+        check("the lease is cleared", lease_after is None, str(lease_after))
+        check("completed_at is set", comp is not None)
+        check("started_at is unchanged by finishing", sa3 == sa2)
+        check("and the lease knows it finished", tlease.finished is True)
+        check("so it may still report the result", tlease.settled() is True)
+
         # Burn through the attempts and the reaper gives up honestly.
         with conn.cursor() as cur:
             cur.execute("UPDATE {} SET attempts = 3, "
@@ -299,6 +341,55 @@ else:
                 conn.close()
             except Exception:
                 pass
+
+print("\n[3b] The worker owns the lifecycle transition, the CRM owns the result")
+# The defect this closes: the CRM's callback handler wrote the terminal status
+# first, so the worker's fenced write matched no row, raised OwnershipLost, and
+# left lease_expires_at populated on a finished job.
+settled = js.Lease(FakeStore(("job1", "workerB", 2)), "job1", "workerB", 2, {})
+check("a fresh lease is not yet finished", settled.finished is False)
+check("and speaks for the job because it owns it", settled.settled() is True)
+settled.finish("completed", {"x": 1})
+check("finishing marks the lease finished", settled.finished is True)
+check("and it still speaks for the job afterwards", settled.settled() is True,
+      "the row is no longer running, but this worker wrote that state")
+
+ghost = js.Lease(FakeStore(("job1", "workerB", 2)), "job1", "workerA", 1, {})
+check("a worker that never owned the job cannot speak for it",
+      ghost.settled() is False)
+try:
+    ghost.finish("completed", {})
+    check("and cannot finish it", False, "it succeeded")
+except js.OwnershipLost:
+    check("and cannot finish it", True)
+check("nor does a failed finish mark it finished", ghost.finished is False,
+      "so it still cannot send a callback")
+
+APP_ORDER = io.open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+
+
+def _order(marker_a, marker_b, region_start, region_end):
+    region = APP_ORDER[APP_ORDER.index(region_start):APP_ORDER.index(region_end)]
+    return region.index(marker_a) < region.index(marker_b)
+
+
+check("the completed path writes the terminal state before calling back",
+      _order("finish(job_id)", 'notify_crm(job_id, {', "limited = bool(quality",
+             "except rs.RetrievalError"))
+check("the synthesis_failed path does the same",
+      _order("finish(job_id)", '"event": "synthesis_failed"',
+             "if not produced", "limited = bool(quality"))
+check("the callback checks settled(), not owns()",
+      "lease.settled()" in APP_ORDER and "not lease.owns()" not in APP_ORDER)
+check("a lost lease still cannot call back",
+      "lease.lost or not lease.settled()" in APP_ORDER)
+
+print("\n[3c] Queue timing means what it says")
+check("enqueue does not set started_at", "started_at" not in js.ENQUEUE,
+      "queued_at and started_at were the same instant, so wait was unmeasurable")
+check("the claim sets it once", "started_at = COALESCE(j.started_at, now())" in js.CLAIM)
+check("and a reclaim leaves it alone", "COALESCE(j.started_at" in js.CLAIM,
+      "attempts 2 and 3 keep the first claim's time")
 
 print("\n[4b] The engine performs no DDL")
 STORE = io.open(os.path.join(HERE, "job_store.py"), encoding="utf-8").read()

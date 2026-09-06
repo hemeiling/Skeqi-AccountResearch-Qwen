@@ -501,7 +501,11 @@ def notify_crm(job_id, payload):
     # lapsed must not tell the CRM anything about a job another worker is now
     # running - a stale "completed" would overwrite a live run's result.
     if lease is not None:
-        if lease.lost or not lease.owns():
+        # settled(), not owns(): the terminal write is made BEFORE the callback,
+        # so by now the row is no longer 'running'. A worker that wrote that
+        # state is exactly the one entitled to report it; a worker that lost the
+        # lease still cannot, because its own finish() would have raised first.
+        if lease.lost or not lease.settled():
             lease.lost = True
             return False, "ownership lost; callback not sent"
     url = _callback_target(job)
@@ -682,6 +686,9 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             failed_attempts = []
             for mv in (snap.get("models") or {}).values():
                 failed_attempts.extend(mv.get("ai_attempts") or [])
+            # Fenced terminal write BEFORE the callback: the worker owns the
+            # lifecycle transition, the CRM owns the report and accounting.
+            finish(job_id)
             notify_crm(job_id, {"event": "synthesis_failed",
                                 "company_name": company, "website": website,
                                 "ai_usage": (package.get("ai_usage") or []) + failed_attempts,
@@ -692,7 +699,6 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                                     payload=_last_payload(snap)),
                                 "error": "Synthesis failed after all fallbacks. "
                                          "Retrieval evidence preserved."})
-            finish(job_id)
             return
 
         limited = bool(quality.get("degraded") or quality.get("zero_grounding"))
@@ -702,6 +708,10 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             limitations=quality.get("limitations") or [],
             zero_grounding=bool(quality.get("zero_grounding")),
             wall_seconds=round(time.time() - t_wall, 1)))
+
+        # Fenced terminal write BEFORE the callbacks, for the same reason: the
+        # worker decides the job is over, the CRM records what came out of it.
+        finish(job_id)
 
         # The report is finished. Hand it to the CRM to store; this is the ONLY
         # path by which a completed run reaches Neon.
@@ -731,7 +741,6 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
             saved_any = saved_any or ok
             update(job_id, lambda j, ok=ok, d=detail:
                    j.update(crm_persisted=ok, crm_detail=d))
-        finish(job_id)
         if not saved_any and produced:
             # Say so loudly on the job: the run cost money and may not be stored.
             update(job_id, lambda j: j.update(
@@ -752,15 +761,15 @@ def worker(job_id, company, website, models, use_cache, force=False, known_conta
                      "reasons": [rs.FAILURE_REASONS.get(e.reason, str(e))]},
             website=e.website or j.get("website"),
             wall_seconds=round(time.time() - t_wall, 1)))
+        finish(job_id)
         notify_crm(job_id, {"event": "failed",
                             "error": "Retrieval incomplete - nothing was generated."})
-        finish(job_id)
     except Exception as e:
         update(job_id, lambda j: j.update(status="error", phase="error",
                                           message=str(e)[:300],
                                           wall_seconds=round(time.time() - t_wall, 1)))
-        notify_crm(job_id, {"event": "failed", "error": str(e)[:400]})
         finish(job_id)
+        notify_crm(job_id, {"event": "failed", "error": str(e)[:400]})
 
 
 @app.route("/")

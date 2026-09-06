@@ -122,7 +122,7 @@ UPDATE {t} j
    SET status = 'running',
        worker_id = %(worker_id)s,
        attempts = j.attempts + 1,
-       started_at = COALESCE(j.started_at, now()),
+       started_at = COALESCE(j.started_at, now()),   -- first claim only
        heartbeat_at = now(),
        lease_expires_at = now() + (%(lease)s || ' seconds')::interval,
        updated_at = now()
@@ -172,12 +172,14 @@ SELECT 1 FROM {t}
    AND attempts = %(attempts)s AND status = 'running'
 """
 
+# started_at is deliberately absent: it is when a WORKER first picked the job
+# up, not when the request arrived. Setting it here made queue wait unmeasurable
+# because queued_at and started_at were the same instant.
 ENQUEUE = """
 INSERT INTO {t} (job_id, company_key, company_name, website, model, job_type,
-                 status, stage, progress_percent, payload, queued_at,
-                 started_at, updated_at)
+                 status, stage, progress_percent, payload, queued_at, updated_at)
 VALUES (%(job_id)s, %(company_key)s, %(company_name)s, %(website)s, %(model)s,
-        %(job_type)s, 'queued', 'queued', 0, %(payload)s, now(), now(), now())
+        %(job_type)s, 'queued', 'queued', 0, %(payload)s, now(), now())
 RETURNING job_id
 """
 
@@ -336,6 +338,10 @@ class Lease(object):
         self.website = website or self.payload.get("website")
         self.model = model or self.payload.get("model")
         self.lost = False
+        # Set once the fenced terminal write succeeds. The row is no longer
+        # 'running' after that, so owns() would say no - but this worker is
+        # precisely the one entitled to report the result it just wrote.
+        self.finished = False
 
     @property
     def token(self):
@@ -361,6 +367,13 @@ class Lease(object):
             stage=stage, pct=pct))
 
     def finish(self, status, runtime_state, error=None, stage=None, pct=100):
-        return self._check(self.store.finish(
+        ok = self._check(self.store.finish(
             self.job_id, self.worker_id, self.attempts, status, runtime_state,
             error=error, stage=stage, pct=pct))
+        self.finished = True
+        return ok
+
+    def settled(self):
+        """Still entitled to speak for this job: either the lease is live, or we
+        are the worker that wrote its terminal state."""
+        return self.finished or self.owns()
