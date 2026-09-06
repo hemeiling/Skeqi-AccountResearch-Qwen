@@ -135,6 +135,68 @@ check("correction is idempotent",
 check("bilingual headings survive", "现有自动化供应商" in out)
 check("evidence citations survive", "[1]" in out and "[6]" in out)
 
+print("\n[9] The provider column is found by HEADER, not by position")
+check("Company table -> column 1",
+      pv.provider_column("| Company | Classification | Evidence |") == 1)
+check("Process/Provider table -> column 2",
+      pv.provider_column(
+          "| Process or capability | Provider or internal capability | Evidence |") == 2,
+      "this is the shape that shipped unprotected")
+check("Chinese Company header", pv.provider_column("| 公司 | 能力 | 证据 |") == 1)
+check("Chinese provider header",
+      pv.provider_column("| 工艺或能力 | 供应商或内部能力 | 证据 |") == 2)
+check("a table with no organisation column is left alone",
+      pv.provider_column("| Role | Name | Notes |") is None)
+check("a provider word beats a capability word in the same header",
+      pv.provider_column("| Capability | Supplier | X |") == 2)
+
+print("\n[10] The production defects, as regression cases")
+REAL = """## Existing Automation Providers / 现有自动化供应商
+
+| Process or capability | Provider or internal capability | Evidence | Confidence | Incumbency |
+| --- | --- | --- | --- | --- |
+| Structural battery laser welding | Undisclosed Tier-1s / Ford internal engineering | [14] | Verified | High |
+| Cobots & flex assembly stations | ABB Robotics, Kuka/Rethink/Fanuc (market) | [15] | Verified | Very High |
+| Digital factory | MES provider | [3] | Likely | Moderate |
+"""
+PR = [{"name": "ABB Robotics", "relationship": rs.REL_CONFIRMED,
+       "provenance": rs.PROV_TARGET}]
+fixed, n2 = pv.enforce(REAL, PR, "Ford Motor Company")
+rows = [l for l in fixed.split("\n") if l.startswith("| ") and "---" not in l]
+cols = lambda r: [c.strip() for c in r.split("|")]
+check("Undisclosed Tier-1s does not survive as a provider",
+      "Undisclosed Tier-1s" not in cols(rows[1])[2], cols(rows[1])[2])
+check("it is re-filed as a capability",
+      "Undisclosed Tier-1s" in n2["moved_capability"], str(n2["moved_capability"]))
+check("Ford internal engineering moves to Internal Capability",
+      any("Ford internal engineering" in x for x in n2["moved_internal"]),
+      str(n2["moved_internal"]))
+check("a row losing every provider also loses its incumbency grade",
+      cols(rows[1])[5] == "—", cols(rows[1])[5])
+check("the confirmed provider survives intact",
+      "ABB Robotics" in cols(rows[2])[2], cols(rows[2])[2])
+check("market-only vendors keep their row but not Very High",
+      "Very High" not in rows[2] and "market context" in rows[2].lower(), rows[2])
+check("a generic capability in the provider column is removed",
+      "MES provider" not in cols(rows[3])[2], cols(rows[3])[2])
+check("table structure is preserved exactly",
+      len({len(r.split("|")) for r in rows}) == 1,
+      str(sorted({len(r.split("|")) for r in rows})))
+check("citations survive", "[14]" in fixed and "[15]" in fixed)
+check("bilingual heading survives", "现有自动化供应商" in fixed)
+check("correction is idempotent",
+      pv.enforce(fixed, PR, "Ford Motor Company")[0] == fixed)
+
+print("\n[11] Capitalisation alone is not an organisation")
+for phrase in ("Structural battery laser welding", "Cobots & flex assembly stations",
+               "Precision machining (Aluminum Unicasting)", "Undisclosed Tier-1s",
+               "Automation Providers", "System Integrators", "Aluminum Unicasting",
+               "机器人供应商", "系统集成商"):
+    check("rejected: %s" % phrase, not rs.is_named_organization(phrase))
+for org in ("ABB Robotics", "ABB", "FANUC", "Kuka", "PMi2", "Silk EV",
+            "Rockwell Automation", "Dürr Systems", "比亚迪", "宁德时代"):
+    check("accepted: %s" % org, rs.is_named_organization(org))
+
 print("\n{} passed, {} failed".format(len(PASS), len(FAIL)))
 for f in FAIL:
     print("  FAILED: " + f)

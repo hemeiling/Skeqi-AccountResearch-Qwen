@@ -1731,6 +1731,24 @@ _CATEGORY_WORDS = {
     "manufacturing", "industrial", "local", "unknown", "internal", "engineering",
     "team", "capability", "technology", "technologies", "the", "a", "an", "and",
     "of", "for", "our", "their", "its", "generic", "various", "multiple",
+    # PROCESS vocabulary. Measured on the Ford production run: capitalisation
+    # alone was qualifying "Structural battery laser welding" and "Cobots & flex
+    # assembly stations" as organisations, because the first word happened to be
+    # capitalised. A process is not a company however a table capitalises it.
+    "structural", "precision", "machining", "welding", "weld", "laser", "cutting",
+    "assembly", "assemblies", "station", "stations", "cell", "cells", "module",
+    "pack", "line", "lines", "cobot", "cobots", "flex", "flexible", "casting",
+    "castings", "unicasting", "moulding", "molding", "stamping", "press",
+    "painting", "paint", "coating", "dispensing", "sealing", "joining",
+    "inspection", "metrology", "vision", "test", "testing", "traceability",
+    "logistics", "handling", "material", "materials", "conveyor", "conveyors",
+    "tooling", "fixture", "fixtures", "integration", "analytics", "quality",
+    "process", "processes", "battery", "cnc", "turnkey", "undisclosed",
+    "similar", "misc", "other", "others", "tbd", "n/a", "na", "none",
+    # Materials. "Precision machining (Aluminum Unicasting)" qualified because
+    # Aluminum is capitalised; a material is not a company either.
+    "aluminum", "aluminium", "steel", "copper", "plastic", "plastics",
+    "composite", "composites", "polymer", "glass", "rubber", "alloy",
 }
 _CATEGORY_ZH = ("厂商", "供应商", "服务商", "集成商", "生态伙伴", "合作伙伴",
                 "内部工程团队", "工程团队", "内部团队", "通用")
@@ -1756,10 +1774,12 @@ def is_named_organization(candidate):
         return False
     if re.search(r"[\u4e00-\u9fff]", c):
         return len(c) >= 2                     # a CJK name that is not a category
-    # Latin: needs a proper-noun-looking token, or an organisational suffix on a
-    # name that is not purely category words.
-    proper = [w for w in re.split(r"[\s/&,\-]+", c)
-              if w and w[0].isupper() and w.lower() not in _CATEGORY_WORDS]
+    # Latin: a proper-noun-looking token that is NOT industry vocabulary, or an
+    # organisational suffix on a name that is not purely category words.
+    # Capitalisation alone is not evidence: a table capitalises its first cell.
+    proper = [w for w in re.split(r"[\s/&,\-()]+", c)
+              if w and w[0].isupper() and w.lower() not in _CATEGORY_WORDS
+              and not w.lower().rstrip("s") in _CATEGORY_WORDS]
     if proper:
         return True
     return words[-1] in _ORG_SUFFIX_EN and len(words) > 1

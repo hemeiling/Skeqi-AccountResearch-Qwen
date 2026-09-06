@@ -44,6 +44,11 @@ RELATIONSHIP_LABEL = {
 
 # Words that must never describe a MARKET_ONLY organisation. Being in this market
 # is not being in this account.
+# The incumbency GRADE is a cell of its own. An earlier version matched the
+# surrounding pipes and replaced them too, merging two cells and corrupting the
+# row - so the pipes are preserved and only the cell body is rewritten.
+_INCUMBENCY_GRADE = re.compile(r"(?<=\|)(\s*)(?:Very High|High|Medium|Moderate|Low/Med)(\s*)(?=\|)", re.I)
+
 _INCUMBENT_WORDS = re.compile(
     r"\b(incumbent|installed base|current supplier|existing supplier|"
     r"supplies the account|in use at|deployed at)\b|现有供应商|在用供应商", re.I)
@@ -89,6 +94,7 @@ def provider_prompt_block(providers, account):
 # Output correction
 # --------------------------------------------------------------------------
 
+_CLEARED = {"\u2014", "-", "\u2013", "n/a", "N/A", "none", "None", ""}
 _EMPH = re.compile(r"[*_`]+")
 _CITE = re.compile(r"\[\d+(?:\s*,\s*\d+)*\]")
 
@@ -99,6 +105,46 @@ def _cell_text(cell):
 
 def _is_separator(row):
     return bool(re.fullmatch(r"[\s|:\-]+", row or ""))
+
+
+# Which column actually names the organisation. Position is not a reliable
+# answer: the Competitor table starts with Company, while the Provider table
+# starts with "Process or capability" and puts the provider SECOND. Judging
+# column one there inspected capability phrases and never looked at the column
+# that carries supplier claims - which is how "Undisclosed Tier-1s" survived a
+# production run.
+_PROVIDER_HEADER = re.compile(
+    r"(company|provider|organi[sz]ation|supplier|vendor|integrator|"
+    r"\u516c\u53f8|\u4f9b\u5e94\u5546|\u5382\u5546|\u63d0\u4f9b\u5546|\u96c6\u6210\u5546)", re.I)
+# A header that merely describes work, never an organisation.
+_NON_PROVIDER_HEADER = re.compile(
+    r"(process|capability|capabilities|\u5de5\u827a|\u80fd\u529b)", re.I)
+
+
+def provider_column(header_line):
+    """Index of the organisation column, by header semantics. None if absent.
+
+    "Provider or internal capability" names a provider AND a capability; it is
+    still the provider column, so a provider word wins over a capability word in
+    the same header. A header that is only a capability word is not.
+    """
+    cells = [_cell_text(c) for c in (header_line or "").split("|")]
+    best = None
+    for i, c in enumerate(cells):
+        if not c:
+            continue
+        if _PROVIDER_HEADER.search(c):
+            if best is None:
+                best = i
+        elif _NON_PROVIDER_HEADER.search(c):
+            continue
+    return best
+
+
+def _split_entries(cell):
+    """One cell can list several things: "ABB Robotics, Kuka/Fanuc (market)"."""
+    parts = re.split(r"\s*(?:,|;|/|\u3001|\uff0c)\s*", cell or "")
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _account_owned(text, account, aliases=()):
@@ -119,9 +165,9 @@ def enforce(report, providers=None, account="", aliases=()):
     """Correct the rendered report so a category can never read as a supplier.
 
     Conservative on purpose. Only tables inside provider sections are touched,
-    only their FIRST column is judged, and nothing is deleted - a rejected cell
-    is moved to the field it belongs in and listed under the table, so the
-    information survives and only the CLAIM changes.
+    only the column whose HEADER names an organisation is judged, and nothing is
+    deleted - a rejected entry is moved to the field it belongs in and listed
+    under the table, so the information survives and only the CLAIM changes.
     """
     if not report:
         return report, {"moved_capability": [], "moved_internal": [], "empty": False}
@@ -129,16 +175,14 @@ def enforce(report, providers=None, account="", aliases=()):
     market_only = {n for n, p in verified.items()
                    if p.get("relationship") == rs.REL_MARKET}
 
-    out, moved_cap, moved_int = [], [], []
-    # The per-section buffers are cleared when they are flushed under a table, so
-    # the caller needs its own record or the report of what moved comes back empty.
-    all_cap, all_int = [], []
-    in_provider_section = False
-    kept_rows_in_table = 0
-    table_open = False
-    emptied_tables = 0
+    out, all_cap, all_int = [], [], []
+    moved_cap, moved_int = [], []
+    in_section = False
+    col = None                    # provider column for the table being read
+    kept_rows = 0
+    emptied = 0
 
-    def flush_notes(buf):
+    def flush(buf):
         if moved_cap:
             buf.append("")
             buf.append("**{}**: {}".format(CAPABILITY_LABEL,
@@ -148,64 +192,85 @@ def enforce(report, providers=None, account="", aliases=()):
             buf.append("**{}**: {}".format(INTERNAL_LABEL,
                                            "; ".join(dict.fromkeys(moved_int))))
 
-    lines = report.split("\n")
-    for i, line in enumerate(lines):
+    for line in report.split("\n"):
         if line.startswith("#"):
-            # Leaving a provider section: attach whatever was moved out of it.
-            if in_provider_section and (moved_cap or moved_int):
-                flush_notes(out)
-                moved_cap, moved_int = [], []
+            if in_section and (moved_cap or moved_int):
+                flush(out); moved_cap, moved_int = [], []
             head = _cell_text(line).lower()
-            in_provider_section = any(h in head for h in PROVIDER_HEADINGS)
-            table_open = False
+            in_section = any(h in head for h in PROVIDER_HEADINGS)
+            col, kept_rows = None, 0
             out.append(line)
             continue
-        if not in_provider_section or not line.strip().startswith("|"):
-            if table_open and not line.strip().startswith("|"):
-                if kept_rows_in_table == 0 and not verified:
-                    out.append(NO_PROVIDER)
-                    emptied_tables += 1
-                table_open = False
+        stripped = line.strip()
+        if not in_section or not stripped.startswith("|"):
+            if col is not None and not stripped.startswith("|"):
+                if kept_rows == 0 and not verified:
+                    out.append(NO_PROVIDER); emptied += 1
+                col, kept_rows = None, 0
+            out.append(line)
+            continue
+        if _is_separator(line):
             out.append(line)
             continue
 
         cells = line.split("|")
-        if _is_separator(line):
+        if col is None:
+            # First non-separator row of a table is its header.
+            col = provider_column(line)
             out.append(line)
             continue
-        first = _cell_text(cells[1] if len(cells) > 1 else "")
-        low = first.lower()
-        # Header rows and empty rows pass through untouched.
-        if not first or low in ("company", "provider", "organization", "organisation",
-                                "process or capability", "公司", "供应商"):
+        if col >= len(cells):
             out.append(line)
-            table_open = True
             continue
 
-        if rs.is_named_organization(first) and not _account_owned(first, account, aliases):
-            kept_rows_in_table += 1
-            if low in market_only and _INCUMBENT_WORDS.search(line):
-                # Named, but only market context. Strip the incumbency claim
-                # rather than the row: the organisation is real, the claim is not.
-                line = _INCUMBENT_WORDS.sub("market context / 市场参考", line)
+        raw = _cell_text(cells[col])
+        # A cell this corrector already cleared is not a fresh category to file
+        # again - without this, a second pass appends the placeholder itself to
+        # Capability Observed and correction stops being idempotent.
+        if not raw or raw in _CLEARED:
             out.append(line)
-            table_open = True
             continue
 
-        # Rejected as a company. Keep the content, move the claim.
-        if _account_owned(first, account, aliases):
-            moved_int.append(first); all_int.append(first)
+        keep, dropped_cap, dropped_int = [], [], []
+        for entry in _split_entries(raw):
+            bare = re.sub(r"\s*\([^)]*\)\s*", " ", entry).strip()
+            if _account_owned(bare, account, aliases):
+                dropped_int.append(entry)
+            elif rs.is_named_organization(bare):
+                keep.append(entry)
+            else:
+                dropped_cap.append(entry)
+        moved_cap.extend(dropped_cap); all_cap.extend(dropped_cap)
+        moved_int.extend(dropped_int); all_int.extend(dropped_int)
+
+        if not keep:
+            # No organisation left in the provider column. The row's other
+            # columns still describe real work, so the row stays and only the
+            # unsupported claim is removed.
+            cells[col] = " \u2014 "
+            line = "|".join(cells)
+            line = _INCUMBENT_WORDS.sub("market context / \u5e02\u573a\u53c2\u8003", line)
+            line = _INCUMBENCY_GRADE.sub("\\1—\\2", line)
         else:
-            moved_cap.append(first); all_cap.append(first)
-        table_open = True
+            kept_rows += 1
+            cells[col] = " " + ", ".join(keep) + " "
+            line = "|".join(cells)
+            # A row whose only named organisations are market-only cannot carry
+            # an incumbency claim, whatever the model wrote.
+            names = [re.sub(r"\s*\([^)]*\)\s*", " ", k).strip().lower() for k in keep]
+            unverified = all(n not in verified or n in market_only for n in names)
+            flagged = any("(market" in k.lower() for k in keep)
+            if unverified or flagged:
+                line = _INCUMBENT_WORDS.sub("market context / \u5e02\u573a\u53c2\u8003", line)
+                line = _INCUMBENCY_GRADE.sub("\\1market context\\2", line)
+        out.append(line)
 
-    if in_provider_section and (moved_cap or moved_int):
-        flush_notes(out)
+    if in_section and (moved_cap or moved_int):
+        flush(out)
     text = "\n".join(out)
     if not verified and NO_PROVIDER_EN not in text:
-        # Nothing verified anywhere: say so once, in the provider section.
         text = re.sub(r"(?im)^(#{1,6}\s*Existing Automation Providers[^\n]*)$",
                       lambda m: m.group(1) + "\n\n" + NO_PROVIDER, text, count=1)
     return text, {"moved_capability": list(dict.fromkeys(all_cap)),
                   "moved_internal": list(dict.fromkeys(all_int)),
-                  "empty": emptied_tables > 0 or not verified}
+                  "empty": emptied > 0 or not verified}
