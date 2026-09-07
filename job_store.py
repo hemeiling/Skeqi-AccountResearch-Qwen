@@ -291,6 +291,34 @@ class JobStore(object):
         return Lease(self, job_id, worker_id, attempts, payload or {},
                      company, website, model), reaped
 
+    def reap(self, max_attempts=None):
+        """Return expired leases to the queue. Claims nothing, runs nothing.
+
+        The same statement claim() runs, callable on its own so a worker that is
+        busy with a long job can still recover one that a dead process left
+        behind. Reaping was only ever reachable through claim(), which meant a
+        worker in the middle of six minutes of research could not rescue an
+        orphan until it finished - and the CRM's 25-minute net could reach the
+        job first and terminalise something that was still recoverable.
+
+        The predicate is unchanged: only `status = 'running'` with an expired
+        lease. A live lease is never touched. Attempts are respected by the
+        statement itself - at the ceiling the job is failed rather than requeued.
+
+        Ownership is revoked here, not stolen: worker_id becomes NULL, so the
+        old owner's fenced writes stop matching immediately.
+        """
+        max_attempts = MAX_ATTEMPTS if max_attempts is None else max_attempts
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                # The same advisory lock claim() takes, so a reap and a claim
+                # can never read the concurrency count at the same moment.
+                cur.execute("SELECT pg_advisory_xact_lock(hashtext('arq_claim'))")
+                cur.execute(self._sql(REAP), {"max_attempts": max_attempts})
+                rows = cur.fetchall() or []
+                conn.commit()
+        return rows
+
     def heartbeat(self, job_id, worker_id, attempts, lease=None):
         return self._run(HEARTBEAT, {
             "job_id": job_id, "worker_id": worker_id, "attempts": attempts,

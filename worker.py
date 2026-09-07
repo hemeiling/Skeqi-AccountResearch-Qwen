@@ -32,6 +32,11 @@ import research_service as rs                                     # noqa: E402
 
 STOPPING = threading.Event()
 
+# How often the maintenance loop returns expired leases to the queue. Short
+# enough that recovery is prompt, long enough to be free: one UPDATE that
+# usually matches no rows.
+REAP_SECONDS = int(os.environ.get("RESEARCH_REAP_SECONDS", "45"))
+
 
 def log(message):
     sys.stdout.write("[worker] {}\n".format(message))
@@ -55,6 +60,28 @@ def _heartbeat_loop(lease, stop):
             return
         except Exception as e:
             log("heartbeat error ({}) - will retry".format(type(e).__name__))
+
+
+def _reaper_loop(store, stop):
+    """Return expired leases to the queue, whatever this worker is doing.
+
+    Reaping used to happen only inside claim(), so a worker busy with a long run
+    could not recover a job that a dead process had abandoned until its own job
+    finished. That is exactly how a job sat orphaned for eight minutes while
+    another ran, with the CRM's 25-minute net waiting to terminalise it.
+
+    This loop does no research and claims nothing. It requeues, or fails a job
+    that has exhausted its attempts, using the same statement and the same
+    advisory lock as before.
+    """
+    while not stop.wait(REAP_SECONDS):
+        try:
+            for job_id, attempts, status in store.reap():
+                log("reaped {} after a lapsed lease -> {} (attempt {})".format(
+                    job_id, status, attempts))
+        except Exception as e:
+            # Never fatal: the next tick tries again, and claim() still reaps.
+            log("reaper error ({}) - will retry".format(type(e).__name__))
 
 
 def run_one(lease):
@@ -111,6 +138,13 @@ def main():
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
 
+    # Independent of the claim cycle, and stopped by the same event, so SIGTERM
+    # ends it cleanly rather than leaving it to be killed mid-statement.
+    reaper = threading.Thread(target=_reaper_loop, args=(store, STOPPING),
+                              daemon=True, name="reaper")
+    reaper.start()
+    log("reaper started: every {}s, independent of the claim loop".format(REAP_SECONDS))
+
     while not STOPPING.is_set():
         try:
             lease, reaped = store.claim(worker_id)
@@ -126,6 +160,7 @@ def main():
         except Exception:
             log("claim loop error:\n{}".format(traceback.format_exc()))
             STOPPING.wait(js.CLAIM_POLL_SECONDS)
+    reaper.join(timeout=5)
     log("stopped")
     return 0
 
