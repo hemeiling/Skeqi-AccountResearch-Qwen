@@ -36,8 +36,16 @@ APP_ACCESS_SECRET          (optional)
 
 **Embedding — the CRM origin, scheme + host, no path, never `*`:**
 
+> **The live CRM is `skeqi-emaildrafter-i46d.onrender.com`.** The older
+> `skeqi-emaildrafter.onrender.com` is obsolete and now 404s at Render's edge, so
+> a probe against it looks like a failed deploy when nothing is wrong. Confirmed
+> against production 2026-09-06. The engine's own hostname is still written as
+> `<this-service>` below because it has not been recorded; fill it in the next
+> time you are in the Render dashboard.
+
+
 ```
-ALLOWED_FRAME_ANCESTORS=https://<crm-service>.onrender.com
+ALLOWED_FRAME_ANCESTORS=https://skeqi-emaildrafter-i46d.onrender.com
 ```
 
 **DashScope + Apollo:** see `render.yaml` and `ai_credentials.env.example`.
@@ -55,7 +63,7 @@ CURRENT_ACCOUNT_RESEARCH_URL=https://<this-service>.onrender.com
 ```
 curl -sI https://<this-service>.onrender.com/healthz
 curl -sI https://<this-service>.onrender.com/ | grep -i content-security-policy
-# expect: frame-ancestors 'self' https://<crm-service>.onrender.com
+# expect: frame-ancestors 'self' https://skeqi-emaildrafter-i46d.onrender.com
 curl -so /dev/null -w '%{http_code}\n' https://<this-service>.onrender.com/api/reports
 # expect: 401
 ```
